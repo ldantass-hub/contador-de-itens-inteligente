@@ -1,0 +1,235 @@
+Full System Specification: Inventory Counting System (Final Version)
+
+IMPORTANT
+
+Do NOT rewrite existing code (C, HTML, CSS, JS)
+Only extend and integrate features
+Maintain current working parsing logic
+Focus on robustness and real-world usage
+🎯 OBJECTIVE
+
+Build a production-level inventory system with:
+
+Barcode scanning (multiple formats)
+Intelligent parsing
+Input sanitization
+Single-item counting mode
+SQLite database
+Excel import/export
+Login system (username + password)
+Session-based counting
+30-day data retention
+Supervisor dashboard (admin view)
+🧹 INPUT SANITIZATION
+
+Before ANY processing:
+
+Remove ALL leading non-alphanumeric characters
+Example:
+P0RJ6102C455 → 0RJ6102C455
+]0RJ6102C455 → 0RJ6102C455
+
+🧠 PARSING RULES
+
+General principle:
+
+Extract CODE from the beginning
+Extract QUANTITY from the end
+Ignore everything in the middle (noise)
+Supported formats
+
+Code only
+0RJ6701C455
+
+→ define item (no quantity added)
+
+Numeric only
+2000
+
+→ add quantity
+
+Code;Quantity
+0RJ6701C455;2000
+
+Code;Quantity;Noise
+0RJ6701C455;3000;WBAJSIDE43
+
+→ ignore extra parts
+
+Dot-separated
+0RJ6701C455.WBAJSIDE433.2000
+
+Long concatenated
+COV37772001CN010934LG26023895010000200
+
+Standard concatenated
+0RJ6701C455YAI82HG002000
+
+Code rule
+
+Default: first 11 characters
+Support shorter codes when necessary
+🚨 EXCEPTION CODES
+
+The following must be accepted exactly as they are:
+
+624-087J
+624-085D
+624-087H
+624-087B
+624-087D
+586-008B
+6631R-G007H
+
+Behavior
+
+Bypass parsing rules
+Treat as valid codes
+Do NOT attempt to extract quantity
+🔒 SINGLE ITEM MODE
+
+First valid code defines CURRENT_ITEM
+Only that code is accepted
+All other codes are rejected
+💾 DATABASE (SQLite)
+
+Table: users
+
+id
+username (unique)
+password (hashed)
+role ("user", "admin")
+Table: sessions
+
+id
+user_id
+start_time
+end_time
+last_update
+status ("active", "finished")
+Table: counts
+
+id
+session_id
+code
+quantity
+🔐 LOGIN SYSTEM
+
+Behavior
+
+User must login before accessing system
+Validate username and password
+Deny access if invalid
+🕒 SESSION SYSTEM
+
+On login:
+
+Check for existing active session
+
+IF exists:
+
+If last_update < 2 hours:
+→ Ask: "Continue previous session?"
+Else:
+→ Mark old session as finished
+→ Create new session
+During use:
+
+Update last_update on every scan
+On "Finalizar operação":
+
+Set status = finished
+Set end_time
+🧠 COUNTING RULE
+
+All data must be linked to session_id
+NEVER mix sessions
+📊 EXCEL
+
+Import
+
+Upload file (ITEM | QUANTIDADE)
+Comparison
+
+Compare ONLY with current session
+Export
+
+Generate Excel file with session results
+🕒 DATA RETENTION (30 DAYS)
+
+Rule
+
+Keep data for 30 days
+Cleanup
+
+DELETE FROM sessions
+WHERE start_time < datetime('now', '-30 days');
+
+DELETE FROM counts
+WHERE session_id NOT IN (SELECT id FROM sessions);
+
+👨‍💼 SUPERVISOR DASHBOARD (ADMIN)
+
+Access
+
+Only users with role = "admin"
+Create new page:
+
+/admin
+
+Display:
+
+Session list:
+
+User name
+Start time
+End time
+Status
+Total quantity counted
+Filters:
+
+By user
+By date
+By status
+Detailed view:
+
+Click a session →
+
+Show:
+
+| CODE | QUANTITY |
+
+Additional features:
+
+View active sessions
+View finished sessions
+Export session data to Excel
+🖥️ FRONTEND REQUIREMENTS
+
+Add:
+
+Login screen
+Session status display
+Current user display
+"Finalizar operação" button
+Admin dashboard page
+🚫 SAFETY RULES
+
+Do NOT guess uncertain inputs
+Ignore invalid formats
+Always prioritize accuracy
+🎯 FINAL RESULT
+
+A complete inventory system with:
+
+Real-world barcode handling
+User authentication
+Session tracking
+Supervisor auditing
+Controlled data lifecycle
+Excel integration
+🧠 SYSTEM PHILOSOPHY
+
+Reliability over flexibility
+Traceability over simplicity
+Clean data over accumulated data

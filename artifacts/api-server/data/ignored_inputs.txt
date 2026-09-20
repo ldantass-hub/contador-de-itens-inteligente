@@ -1,0 +1,15 @@
+[2026-03-25T21:05:11.975Z] Linha 1: Erro: codigo nao definido
+[2026-03-25T21:05:11.975Z] Linha 3: Erro: codigo diferente ignorado ("MJKJUIYTRFG" != "JOIFWOEYIE3")
+[2026-03-25T21:05:11.975Z] Linha 4: Erro: codigo diferente ignorado ("YTRSDEXCSSS" != "JOIFWOEYIE3")
+[2026-03-25T21:05:11.975Z] Linha 5: Erro: codigo diferente ignorado ("FFFFFFFFFFF" != "JOIFWOEYIE3")
+[2026-03-26T21:05:12.714Z] Linha 2: Erro: entrada invalida ("P0RJ2301C422")
+[2026-03-28T14:34:57.994Z] Linha 6: Erro: codigo diferente ignorado ("EBZ3401C321" != "COV2345C566")
+[2026-03-30T19:42:02.506Z] Linha 3: Erro: entrada invalida ("COV37772001CN010934LG26023895010000200")
+[2026-03-31T00:54:03.553Z] Linha 4: Erro: codigo diferente ignorado ("EBZ2345C233" != "0RJ6102C455")
+[2026-05-29T21:05:15.026Z] Linha 2: Erro: entrada invalida
+[2026-05-29T21:06:35.749Z] Linha 1: Erro: entrada invalida ("RAC3492840")
+[2026-06-16T19:37:00.306Z] Linha 3: Erro: codigo diferente ignorado ("EAE34897601" != "0RJ4501C477")
+[2026-09-19T23:10:00.445Z] Linha 1: Erro: codigo nao definido
+[2026-09-19T23:10:00.445Z] Linha 2: Erro: entrada invalida ("gdgkt5857607iyli")
+[2026-09-19T23:10:00.445Z] Linha 4: Erro: codigo diferente ignorado ("0RJ4702C477" != "0RJ4701C477")
+[2026-09-19T23:10:00.445Z] Linha 6: Erro: codigo diferente ignorado ("0RH7022C555" != "0RJ4701C477")

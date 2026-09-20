@@ -1,0 +1,317 @@
+Full System Specification: Barcode Inventory Audit System (Final Version)
+
+IMPORTANT
+
+- DO NOT rewrite existing C code
+- DO NOT recreate the frontend
+- Only extend and integrate the system
+
+---
+
+🎯 OBJECTIVE
+
+Build a robust inventory counting and auditing system with:
+
+- Controlled single-item scanning mode
+- Flexible barcode parsing (multiple formats)
+- Conservative validation (ignore uncertain inputs)
+- SQLite database storage
+- Excel upload and comparison (gap analysis)
+- Excel export
+
+---
+
+🧠 CORE SYSTEM LOGIC
+
+1. Single Item Mode (LOCKED SYSTEM)
+
+- The system processes ONLY ONE item at a time
+
+---
+
+First valid scan:
+
+Example:
+0RJ6701C455
+
+Set:
+CURRENT_ITEM = "0RJ6701C455"
+TOTAL = 0
+
+---
+
+After that:
+
+- ONLY accept inputs related to CURRENT_ITEM
+- Reject all different codes
+
+---
+
+📥 SUPPORTED INPUT FORMATS
+
+1. Code only
+
+Example:
+0RJ6701C455
+
+Action:
+
+- If CURRENT_ITEM is empty → define it
+- Otherwise → ignore (no quantity added)
+
+---
+
+2. Numeric only (quantity)
+
+Example:
+2000
+
+Action:
+
+- Add 2000 to TOTAL
+
+---
+
+3. Code + Quantity
+
+Example:
+0RJ6701C455;2000
+
+Action:
+
+- Validate code == CURRENT_ITEM
+- Add 2000
+
+---
+
+4. Concatenated barcode (SAFE MODE)
+
+Example:
+0RJ6701C455YAI82HG002000
+
+Action:
+
+- ONLY process if input starts with CURRENT_ITEM
+
+Then:
+
+- Extract trailing digits (quantity)
+- Remove leading zeros
+- Convert to integer
+- If quantity > 0 → add to TOTAL
+- If quantity = 0 → IGNORE
+
+---
+
+🚫 IGNORE RULES (CRITICAL)
+
+The system must IGNORE inputs when:
+
+- Format is unknown
+- Cannot safely extract quantity
+- Code is different from CURRENT_ITEM
+- Extracted quantity is zero
+- Input is malformed
+
+---
+
+🧾 VALIDATION RULES
+
+- Code must be alphanumeric:
+  ^[A-Z0-9]+$
+
+- Quantity must be numeric:
+  ^[0-9]+$
+
+---
+
+💾 DATABASE (SQLite)
+
+Database name:
+
+estoque.db
+
+---
+
+Table:
+
+itens:
+
+- id INTEGER PRIMARY KEY AUTOINCREMENT
+- codigo TEXT UNIQUE
+- quantidade INTEGER
+
+---
+
+Behavior
+
+When user clicks "Finalizar operação":
+
+IF item exists:
+UPDATE quantidade += TOTAL
+
+IF item does not exist:
+INSERT new record
+
+---
+
+Reset after saving:
+
+CURRENT_ITEM = null
+TOTAL = 0
+
+---
+
+🌐 BACKEND (Python - Flask)
+
+Responsibilities:
+
+- Receive scanner data
+- Parse inputs (all formats)
+- Enforce single-item logic
+- Integrate with existing C code (via subprocess)
+- Store results in SQLite
+- Handle Excel upload
+- Perform comparison
+- Export results
+
+---
+
+📊 EXCEL IMPORT (EXPECTED DATA)
+
+Frontend:
+
+Add:
+"Importar planilha"
+
+---
+
+Backend endpoint:
+
+POST /upload
+
+---
+
+Use library:
+
+openpyxl
+
+---
+
+Expected Excel format:
+
+| ITEM | QUANTIDADE |
+
+---
+
+Behavior:
+
+- Read Excel file
+- Store data in memory (dictionary)
+
+---
+
+🔍 COMPARISON (GAP ANALYSIS)
+
+Compare:
+
+Database (counted items)
+vs
+Excel (expected items)
+
+---
+
+Output:
+
+| ITEM | CONTADO | ESPERADO | DIFERENÇA |
+
+---
+
+Formula:
+
+DIFFERENCE = CONTADO - ESPERADO
+
+---
+
+Rules:
+
+- Positive → "+"
+- Negative → "-"
+- Highlight differences
+
+---
+
+📤 EXPORT TO EXCEL
+
+Endpoint:
+
+GET /exportar
+
+---
+
+Use openpyxl:
+
+Generate file with:
+
+| ITEM | QUANTIDADE TOTAL |
+
+---
+
+File name:
+
+resultado_<codigo>.xlsx
+
+---
+
+🖥️ FRONTEND REQUIREMENTS
+
+Keep existing UI.
+
+Add:
+
+- "Finalizar operação"
+- "Importar planilha"
+- "Comparar dados"
+- "Exportar para Excel"
+
+---
+
+Display:
+
+- Item atual
+- Quantidade total (real-time)
+- Error messages
+
+---
+
+📜 LOGGING (IMPORTANT)
+
+Create log file:
+
+ignored_inputs.txt
+
+Store:
+
+- All ignored inputs
+- For future analysis
+
+---
+
+🧠 SYSTEM PHILOSOPHY
+
+- Do NOT guess uncertain data
+- Prefer ignoring over incorrect counting
+- Ensure reliability over flexibility
+
+---
+
+🎯 FINAL RESULT
+
+A production-level inventory system that:
+
+- Handles real-world barcode variations
+- Prevents user error
+- Stores data safely
+- Compares with Excel
+- Identifies discrepancies (gaps)
+- Generates reports

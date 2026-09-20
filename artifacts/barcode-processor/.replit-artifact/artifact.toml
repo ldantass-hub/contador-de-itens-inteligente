@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Barcode Quantity Processor"
+version = "1.0.0"
+id = "artifacts/barcode-processor"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21460
+
+[services.development]
+run = "pnpm --filter @workspace/barcode-processor run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/barcode-processor", "run", "build" ]
+publicDir = "artifacts/barcode-processor/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21460"
+BASE_PATH = "/"
