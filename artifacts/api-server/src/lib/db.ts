@@ -29,8 +29,18 @@ async function initializeDatabase(): Promise<void> {
       AND ${sessions.startTime} >= now() - interval '180 days'
   )`);
   await db.delete(sessions).where(sql`${sessions.startTime} < now() - interval '180 days'`);
-  await seedUser("lael1.dantas", "@manaus2026", "user");
-  await seedUser("joarez.silva", "@manaus2026", "admin");
+
+  const bootstrapUserUsername = process.env.BOOTSTRAP_USER_USERNAME;
+  const bootstrapUserPassword = process.env.BOOTSTRAP_USER_PASSWORD;
+  if (bootstrapUserUsername && bootstrapUserPassword) {
+    await seedUser(bootstrapUserUsername, bootstrapUserPassword, "user");
+  }
+
+  const bootstrapAdminUsername = process.env.BOOTSTRAP_ADMIN_USERNAME;
+  const bootstrapAdminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (bootstrapAdminUsername && bootstrapAdminPassword) {
+    await seedUser(bootstrapAdminUsername, bootstrapAdminPassword, "admin");
+  }
 }
 
 await initializeDatabase();
