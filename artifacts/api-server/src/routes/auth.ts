@@ -7,29 +7,49 @@ import { authenticate } from "../middlewares/authenticate.js";
 
 const router = Router();
 
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_IP_MAX = 20;
+const LOGIN_USERNAME_MAX = 5;
+
+function normalizeUsernameForRateLimit(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase().slice(0, 100);
+}
+
 /*
- * C2 FIX — Brute-force protection on the login endpoint
+ * Brute-force protection on the login endpoint.
  *
- * Strategy: IP-based sliding-window limiter.
- *   - 5 failed-or-successful attempts per 15 minutes per IP.
- *   - After 5 attempts the endpoint returns 429 with a Retry-After header.
- *   - skipSuccessfulRequests: false — counts every call so an attacker
- *     cannot enumerate usernames by observing which calls are "free".
- *   - standardHeaders / legacyHeaders: sends RFC-compliant RateLimit headers
- *     so clients can back off gracefully.
+ * Strategy: layered limiters to preserve IP flood protection while reducing the
+ * risk of targeted brute-force against a single account behind a shared NAT.
  *
- * Note: in a horizontally scaled deployment, replace the default in-memory
- * store with a shared store (e.g. rate-limit-redis) so limits are shared
- * across all instances.
+ * - IP limiter protects against abusive traffic and flood from a shared public IP.
+ * - Username limiter protects against brute force against a single account.
+ * - Successful logins do not consume the failure buckets.
+ * - standardHeaders / legacyHeaders: sends RFC-compliant RateLimit headers.
  */
-const loginLimiter = rateLimit({
-  windowMs:              15 * 60 * 1000, /* 15-minute window */
-  max:                   5,              /* max 5 attempts per window per IP */
-  standardHeaders:       "draft-7",      /* RateLimit headers (RFC 9110) */
+const loginIpLimiter = rateLimit({
+  windowMs:              LOGIN_WINDOW_MS,
+  max:                   LOGIN_IP_MAX,
+  standardHeaders:       "draft-7",
   legacyHeaders:         false,
-  skipSuccessfulRequests: false,         /* count every attempt, not just failures */
+  skipSuccessfulRequests: true,
   message: { error: "Muitas tentativas de login. Tente novamente em 15 minutos." },
   /* Default keyGenerator used — handles IPv4/IPv6 correctly with trust proxy */
+});
+
+const loginUsernameLimiter = rateLimit({
+  windowMs:              LOGIN_WINDOW_MS,
+  max:                   LOGIN_USERNAME_MAX,
+  standardHeaders:       "draft-7",
+  legacyHeaders:         false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const normalizedUsername = normalizeUsernameForRateLimit(
+      (req.body as { username?: unknown } | undefined)?.username,
+    );
+    return `username:${normalizedUsername || "unknown"}`;
+  },
+  message: { error: "Muitas tentativas de login. Tente novamente em 15 minutos." },
 });
 
 /* ── POST /api/auth/login ───────────────────────────────────────────────────
@@ -37,7 +57,7 @@ const loginLimiter = rateLimit({
    Returns the token and, when applicable, the active session that must be resumed.
    A new session is created only after the organization is selected.
 */
-router.post("/login", loginLimiter, async (req, res) => {
+router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => {
   const { username, password } = req.body as { username?: string; password?: string };
 
   if (!username || typeof username !== "string" || !password || typeof password !== "string") {
