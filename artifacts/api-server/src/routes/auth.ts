@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
-import { findUserByUsername, getActiveSession, finalizeSession } from "../lib/db.js";
+import { findUserByUsername, findUserById, getActiveSession, finalizeSession, updateUserPassword } from "../lib/db.js";
 import { signToken } from "../lib/jwtUtils.js";
 import { authenticate } from "../middlewares/authenticate.js";
 
@@ -118,6 +118,57 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
 */
 router.get("/me", authenticate, (req, res) => {
   res.json({ user: req.user });
+});
+
+/* ── PUT /api/auth/password ──────────────────────────────────────────────── */
+router.put("/password", authenticate, async (req, res) => {
+  const body = (req.body ?? {}) as {
+    currentPassword?: unknown;
+    newPassword?: unknown;
+    confirmPassword?: unknown;
+  };
+
+  if (
+    typeof body.currentPassword !== "string" ||
+    typeof body.newPassword !== "string" ||
+    typeof body.confirmPassword !== "string" ||
+    !body.currentPassword ||
+    !body.newPassword ||
+    !body.confirmPassword
+  ) {
+    res.status(400).json({ error: "Preencha todos os campos de senha." });
+    return;
+  }
+
+  if (body.currentPassword.length > 200 || body.newPassword.length > 200 || body.confirmPassword.length > 200) {
+    res.status(400).json({ error: "A senha excede o limite permitido." });
+    return;
+  }
+
+  if (body.newPassword.length < 12) {
+    res.status(400).json({ error: "A nova senha deve ter no mínimo 12 caracteres." });
+    return;
+  }
+
+  if (body.newPassword !== body.confirmPassword) {
+    res.status(400).json({ error: "A confirmação da nova senha não confere." });
+    return;
+  }
+
+  const user = await findUserById(req.user!.userId);
+  if (!user || !(await bcrypt.compare(body.currentPassword, user.password))) {
+    res.status(400).json({ error: "Não foi possível alterar a senha informada." });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(body.newPassword, 10);
+  const updated = await updateUserPassword(req.user!.userId, passwordHash);
+  if (!updated) {
+    res.status(400).json({ error: "Não foi possível alterar a senha informada." });
+    return;
+  }
+
+  res.json({ message: "Senha alterada com sucesso." });
 });
 
 export default router;

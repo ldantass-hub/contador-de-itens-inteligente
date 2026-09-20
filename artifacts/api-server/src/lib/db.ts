@@ -93,6 +93,14 @@ export async function createUser(username: string, password: string, role: "user
   return user.id;
 }
 
+export async function updateUserPassword(userId: number, passwordHash: string): Promise<boolean> {
+  const result = await db.update(users)
+    .set({ password: passwordHash })
+    .where(eq(users.id, userId))
+    .returning({ id: users.id });
+  return result.length > 0;
+}
+
 /* ── Session helpers ──────────────────────────────────────────────────────── */
 
 function mapSession(session: typeof sessions.$inferSelect): DbSession {

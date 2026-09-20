@@ -51,6 +51,13 @@ function parseLogEntry(log: string): { code: string | null; quantity: number | n
 export default function Home() {
   const { user, session, isAdmin, authHeader, fetchAuth, logout } = useAuth();
   const [, navigate] = useLocation();
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const [rawLines,     setRawLines]     = useState<string[]>([]);
   const [items,        setItems]        = useState<ItemEntry[]>([]);
@@ -78,6 +85,61 @@ export default function Home() {
   const runningTotal = liveResult?.total ?? 0;
 
   const hdr = () => ({ ...authHeader(), "Content-Type": "application/json" });
+
+  function closePasswordModal() {
+    setShowPasswordModal(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setPasswordError("");
+    setPasswordSuccess("");
+  }
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      setPasswordError("Preencha todos os campos de senha.");
+      return;
+    }
+    if (newPassword.length < 12) {
+      setPasswordError("A nova senha deve ter no mínimo 12 caracteres.");
+      return;
+    }
+    if (newPassword.length > 200 || currentPassword.length > 200 || confirmNewPassword.length > 200) {
+      setPasswordError("A senha excede o limite permitido.");
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError("A confirmação da nova senha não confere.");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const response = await fetchAuth("/api/auth/password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword: confirmNewPassword }),
+      });
+      const data = await response.json() as { message?: string; error?: string };
+      if (!response.ok) {
+        setPasswordError(data.error ?? "Não foi possível alterar a senha.");
+        return;
+      }
+      setPasswordSuccess(data.message ?? "Senha alterada com sucesso.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setTimeout(closePasswordModal, 900);
+    } catch {
+      setPasswordError("Erro de conexão com o servidor.");
+    } finally {
+      setIsChangingPassword(false);
+    }
+  }
 
   /* Ping the server on every scan to update last_update */
   function pingSession() {
@@ -341,6 +403,16 @@ export default function Home() {
                   Supervisor
                 </button>
               )}
+              <button
+                className="app-btn app-btn-outline app-btn-sm"
+                onClick={() => {
+                  setPasswordError("");
+                  setPasswordSuccess("");
+                  setShowPasswordModal(true);
+                }}
+              >
+                Alterar senha
+              </button>
               <button className="app-btn app-btn-outline app-btn-sm" onClick={handleLogout}>
                 Sair
               </button>
@@ -360,6 +432,59 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {showPasswordModal && (
+        <div className="modal-overlay" role="presentation" onMouseDown={e => {
+          if (e.target === e.currentTarget && !isChangingPassword) closePasswordModal();
+        }}>
+          <form className="modal-card password-modal-card" onSubmit={handleChangePassword}>
+            <h2 className="modal-title">Alterar senha</h2>
+            <div className="login-field">
+              <label htmlFor="current-password">Senha atual</label>
+              <input
+                id="current-password"
+                type="password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                disabled={isChangingPassword}
+              />
+            </div>
+            <div className="login-field">
+              <label htmlFor="new-password">Nova senha</label>
+              <input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                disabled={isChangingPassword}
+              />
+            </div>
+            <div className="login-field">
+              <label htmlFor="confirm-new-password">Confirmar nova senha</label>
+              <input
+                id="confirm-new-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmNewPassword}
+                onChange={e => setConfirmNewPassword(e.target.value)}
+                disabled={isChangingPassword}
+              />
+            </div>
+            {passwordError && <div className="admin-error">{passwordError}</div>}
+            {passwordSuccess && <div className="admin-success">{passwordSuccess}</div>}
+            <div className="modal-actions">
+              <button className="app-btn app-btn-outline" type="button" onClick={closePasswordModal} disabled={isChangingPassword}>
+                Cancelar
+              </button>
+              <button className="app-btn app-btn-primary" type="submit" disabled={isChangingPassword}>
+                {isChangingPassword ? "Alterando..." : "Alterar senha"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* ── Main Grid ──────────────────────────────────────────── */}
       <div className="main-grid">
