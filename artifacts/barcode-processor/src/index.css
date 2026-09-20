@@ -1761,6 +1761,15 @@
   font-size: 0.85rem;
 }
 
+.admin-success {
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+}
+
 /* ── Tablet / touch optimization ──────────────────────────────
    The scanner is used on Android tablets in both orientations.
    Keep the original visual language, but let every surface shrink,

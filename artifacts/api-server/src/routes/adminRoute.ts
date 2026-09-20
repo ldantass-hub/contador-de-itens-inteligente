@@ -6,6 +6,7 @@ import {
   getSessionById,
   getSessionCounts,
   getAllUsers,
+  createUser,
 } from "../lib/db.js";
 import { isOrganization, type Organization } from "../lib/organizations.js";
 
@@ -15,6 +16,47 @@ router.use(authenticate, requireAdmin);
 /* ── GET /api/admin/users ───────────────────────────────────────────────────*/
 router.get("/users", async (_req, res) => {
   res.json(await getAllUsers());
+});
+
+/* ── POST /api/admin/users ──────────────────────────────────────────────────*/
+router.post("/users", async (req, res) => {
+  const body = (req.body ?? {}) as {
+    username?: unknown;
+    password?: unknown;
+    role?: unknown;
+  };
+
+  if (typeof body.username !== "string" || typeof body.password !== "string" || !body.username.trim() || !body.password) {
+    res.status(400).json({ error: "Usuário e senha são obrigatórios." });
+    return;
+  }
+
+  const username = body.username.trim();
+  if (username.length < 3 || username.length > 100) {
+    res.status(400).json({ error: "O usuário deve ter entre 3 e 100 caracteres." });
+    return;
+  }
+
+  if (body.password.length < 12) {
+    res.status(400).json({ error: "A senha deve ter no mínimo 12 caracteres." });
+    return;
+  }
+
+  if (body.role !== "user" && body.role !== "admin") {
+    res.status(400).json({ error: "O perfil deve ser 'user' ou 'admin'." });
+    return;
+  }
+
+  try {
+    const id = await createUser(username, body.password, body.role);
+    res.status(201).json({ user: { id, username, role: body.role } });
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+      res.status(409).json({ error: "Esse usuário já existe." });
+      return;
+    }
+    res.status(500).json({ error: "Não foi possível criar o usuário." });
+  }
 });
 
 /* ── GET /api/admin/sessions ────────────────────────────────────────────────
