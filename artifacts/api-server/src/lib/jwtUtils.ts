@@ -1,18 +1,29 @@
 import jwt from "jsonwebtoken";
 
+function getJwtSecret(): string {
+  const jwtSecret = process.env.JWT_SECRET;
+
+  if (!jwtSecret || jwtSecret.trim().length === 0) {
+    throw new Error("JWT configuration error: missing JWT_SECRET.");
+  }
+
+  if (jwtSecret.trim().length < 32) {
+    throw new Error("JWT configuration error: JWT_SECRET must be at least 32 characters.");
+  }
+
+  return jwtSecret;
+}
+
 /*
  * JWT configuration
  *
- * SECRET: falls back to the original development key so existing tokens remain
- * valid across server restarts when JWT_SECRET is not set in the environment.
- * In production, always set JWT_SECRET to a cryptographically random string
- * (e.g. `openssl rand -hex 64`).  The env-var value takes priority over the
- * hard-coded fallback.
+ * Require an explicit environment secret. A missing or weak JWT_SECRET fails the
+ * backend at startup rather than silently accepting predictable tokens.
  *
  * EXPIRES: 8 hours — one work shift.  Previously 7 days; reduced to limit
  * the exposure window of stolen tokens.
  */
-const SECRET  = process.env.JWT_SECRET ?? "lgelectronics-inventory-2026-secret";
+const SECRET  = getJwtSecret();
 const EXPIRES = "8h";
 
 export interface JwtPayload {
