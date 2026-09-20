@@ -10,7 +10,7 @@ pnpm workspace monorepo using TypeScript. Production-level barcode inventory sys
 - **Node.js**: 24
 - **Frontend**: React 19 + Vite + Tailwind CSS (`artifacts/barcode-processor`)
 - **Backend**: Express 5 + TypeScript (`artifacts/api-server`)
-- **Database**: SQLite via `better-sqlite3` (file: `artifacts/api-server/data/estoque.db`)
+- **Database**: PostgreSQL via Drizzle ORM and `node-postgres`
 - **Auth**: JWT (`jsonwebtoken`) + bcrypt (`bcryptjs`)
 - **Excel**: ExcelJS
 - **Build**: esbuild (api-server), Vite (frontend)
@@ -50,14 +50,14 @@ Mounts all routes under `/api`.
 **180-day cleanup** runs on every server startup. Legacy sessions may have a null organization and remain readable.
 
 **Key files:**
-- `src/lib/db.ts` — SQLite schema, seeding, all DB helpers
+- `src/lib/db.ts` — PostgreSQL persistence, seeding, and all DB helpers
 - `src/lib/jwtUtils.ts` — sign/verify JWT (`JWT_SECRET` env var, fallback default)
 - `src/middlewares/authenticate.ts` — Bearer token middleware + `requireAdmin`
 - `src/routes/auth.ts` — login, me
 - `src/routes/sessionsRoute.ts` — session management
 - `src/routes/adminRoute.ts` — supervisor dashboard
 - `src/routes/estoque.ts` — Excel upload/compare/export (session-aware)
-- `build.mjs` — esbuild config (externalizes `better-sqlite3`, `bcrypt`, etc.)
+- `build.mjs` — esbuild configuration
 
 ### `artifacts/barcode-processor` — React Frontend
 

@@ -48,23 +48,23 @@ function pruneExcelStores(now = Date.now()): void {
   }
 }
 
-function getSessionForUser(
+async function getSessionForUser(
   userId: number,
   rawSessionId: unknown,
-): { session: ReturnType<typeof getSessionById>; error?: string; status?: number } {
+): Promise<{ session: Awaited<ReturnType<typeof getSessionById>>; error?: string; status?: number }> {
   if (rawSessionId !== undefined) {
     const sessionId = Number(rawSessionId);
     if (!Number.isInteger(sessionId) || sessionId <= 0) {
       return { session: undefined, error: "sessionId inválido.", status: 400 };
     }
-    const session = getSessionById(sessionId);
+    const session = await getSessionById(sessionId);
     if (!session || session.user_id !== userId) {
       return { session: undefined, error: "Sessão inválida.", status: 403 };
     }
     return { session };
   }
 
-  const session = getActiveSession(userId);
+  const session = await getActiveSession(userId);
   if (!session) {
     return { session: undefined, error: "Nenhuma sessão ativa.", status: 400 };
   }
@@ -75,7 +75,7 @@ function getSessionForUser(
    Legacy endpoint kept for older clients. It now writes only to the
    authenticated user's active session instead of the global legacy table.
 */
-router.post("/finalizar", (req, res) => {
+router.post("/finalizar", async (req, res) => {
   const { codigo, total, ignoredLogs } = req.body as {
     codigo: string;
     total: number;
@@ -91,13 +91,13 @@ router.post("/finalizar", (req, res) => {
     res.status(400).json({ error: "Campo 'total' deve ser um número não-negativo." });
     return;
   }
-  const session = getActiveSession(req.user!.userId);
+  const session = await getActiveSession(req.user!.userId);
   if (!session) {
     res.status(409).json({ error: "Nenhuma sessão ativa para finalizar." });
     return;
   }
 
-  const result = saveAndFinalizeSession(session.id, req.user!.userId, codigo, qty);
+  const result = await saveAndFinalizeSession(session.id, req.user!.userId, codigo, qty);
   if (result !== "saved") {
     res.status(result === "forbidden" ? 403 : 400).json({ error: "Sessão inválida ou já finalizada." });
     return;
@@ -109,13 +109,14 @@ router.post("/finalizar", (req, res) => {
 });
 
 /* ── GET /api/estoque/itens ──────────────────────────────────────────────── */
-router.get("/itens", (req, res) => {
-  const session = getActiveSession(req.user!.userId);
+router.get("/itens", async (req, res) => {
+  const session = await getActiveSession(req.user!.userId);
   if (!session) {
     res.status(400).json({ error: "Nenhuma sessão ativa." });
     return;
   }
-  res.json(getSessionCounts(session.id).map((item, index) => ({
+  const sessionCounts = await getSessionCounts(session.id);
+  res.json(sessionCounts.map((item, index) => ({
     id: index + 1,
     codigo: item.code,
     quantidade: item.quantity,
@@ -128,7 +129,7 @@ router.post("/upload", upload.single("planilha"), async (req, res) => {
     res.status(400).json({ error: "Nenhum arquivo enviado." });
     return;
   }
-  const session = getActiveSession(req.user!.userId);
+  const session = await getActiveSession(req.user!.userId);
   if (!session) {
     res.status(409).json({ error: "Inicie uma sessão antes de importar uma planilha." });
     return;
@@ -170,8 +171,8 @@ router.post("/upload", upload.single("planilha"), async (req, res) => {
 /* ── GET /api/estoque/comparar ───────────────────────────────────────────────
    Compares the user's session counts vs their own imported Excel data.
 */
-router.get("/comparar", authenticate, (req, res) => {
-  const resolved = getSessionForUser(req.user!.userId, req.query.sessionId);
+router.get("/comparar", authenticate, async (req, res) => {
+  const resolved = await getSessionForUser(req.user!.userId, req.query.sessionId);
   if (!resolved.session) {
     res.status(resolved.status ?? 400).json({ error: resolved.error ?? "Sessão inválida." });
     return;
@@ -188,7 +189,7 @@ router.get("/comparar", authenticate, (req, res) => {
   entry.lastUsedAt = Date.now();
   const userStore = entry.data;
 
-  const sessionCounts = getSessionCounts(sessionId);
+  const sessionCounts = await getSessionCounts(sessionId);
   const countMap      = new Map(sessionCounts.map(c => [c.code.toUpperCase(), c.quantity]));
   const allCodes      = new Set([...countMap.keys(), ...userStore.keys()]);
 
@@ -214,15 +215,15 @@ router.get("/comparar", authenticate, (req, res) => {
    Returns export data as JSON for the preview modal.
    Comparison columns are added if the user has imported a sheet.
 */
-router.get("/preview-exportar", authenticate, (req, res) => {
-  const resolved = getSessionForUser(req.user!.userId, req.query.sessionId);
+router.get("/preview-exportar", authenticate, async (req, res) => {
+  const resolved = await getSessionForUser(req.user!.userId, req.query.sessionId);
   if (!resolved.session) {
     res.status(resolved.status ?? 400).json({ error: resolved.error ?? "Sessão inválida." });
     return;
   }
   const session = resolved.session;
   const sessionId = session.id;
-  const counts = getSessionCounts(sessionId);
+  const counts = await getSessionCounts(sessionId);
   pruneExcelStores();
   const entry = excelDataBySession.get(sessionId);
   const userStore = entry?.data;
@@ -265,14 +266,14 @@ router.get("/preview-exportar", authenticate, (req, res) => {
    Exports session counts to Excel.
 */
 router.get("/exportar", authenticate, async (req, res) => {
-  const resolved = getSessionForUser(req.user!.userId, req.query.sessionId);
+  const resolved = await getSessionForUser(req.user!.userId, req.query.sessionId);
   if (!resolved.session) {
     res.status(resolved.status ?? 400).json({ error: resolved.error ?? "Sessão inválida." });
     return;
   }
   const session = resolved.session;
   const sessionId = session.id;
-  const items = getSessionCounts(sessionId);
+  const items = await getSessionCounts(sessionId);
 
   const wb    = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet("Resultado");

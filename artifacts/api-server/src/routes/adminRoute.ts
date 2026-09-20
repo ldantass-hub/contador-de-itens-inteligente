@@ -13,15 +13,15 @@ const router = Router();
 router.use(authenticate, requireAdmin);
 
 /* ── GET /api/admin/users ───────────────────────────────────────────────────*/
-router.get("/users", (_req, res) => {
-  res.json(getAllUsers());
+router.get("/users", async (_req, res) => {
+  res.json(await getAllUsers());
 });
 
 /* ── GET /api/admin/sessions ────────────────────────────────────────────────
    Query params: userId, status, organization, dateFrom, dateTo
    MEDIUM FIX — validate all numeric/string inputs before passing to DB layer.
 */
-router.get("/sessions", (req, res) => {
+router.get("/sessions", async (req, res) => {
   const { userId, status, organization, dateFrom, dateTo } = req.query as Record<string, string>;
 
   const parsedUserId = userId ? Number(userId) : undefined;
@@ -53,7 +53,7 @@ router.get("/sessions", (req, res) => {
     return;
   }
 
-  const sessions = getAllSessions({
+  const sessions = await getAllSessions({
     userId:   parsedUserId,
     status:   status   || undefined,
     dateFrom: dateFrom || undefined,
@@ -66,19 +66,19 @@ router.get("/sessions", (req, res) => {
 /* ── GET /api/admin/sessions/:id ────────────────────────────────────────────
    MEDIUM FIX — validate :id is a positive integer before DB lookup.
 */
-router.get("/sessions/:id", (req, res) => {
+router.get("/sessions/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0 || !Number.isInteger(id)) {
     res.status(400).json({ error: "ID de sessão inválido." });
     return;
   }
 
-  const session = getSessionById(id);
+  const session = await getSessionById(id);
   if (!session) {
     res.status(404).json({ error: "Sessão não encontrada." });
     return;
   }
-  const counts = getSessionCounts(id);
+  const counts = await getSessionCounts(id);
   res.json({ session, counts });
 });
 
@@ -92,12 +92,12 @@ router.get("/sessions/:id/export", async (req, res) => {
     return;
   }
 
-  const session = getSessionById(id);
+  const session = await getSessionById(id);
   if (!session) {
     res.status(404).json({ error: "Sessão não encontrada." });
     return;
   }
-  const counts = getSessionCounts(id);
+  const counts = await getSessionCounts(id);
 
   const wb    = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet("Sessão");

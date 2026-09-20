@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authenticate } from "../middlewares/authenticate.js";
 import {
   getActiveSession,
+  createSession,
   selectOrganizationSession,
   finalizeSession,
   updateSessionPing,
@@ -20,14 +21,14 @@ router.use(authenticate);
    the new session after login. An active session cannot be moved to another
    organization.
 */
-router.post("/select-organization", (req, res) => {
+router.post("/select-organization", async (req, res) => {
   const organization = (req.body as { organization?: unknown }).organization;
   if (!isOrganization(organization)) {
     res.status(400).json({ error: "Selecione uma organização válida." });
     return;
   }
 
-  const selection = selectOrganizationSession(req.user!.userId, organization);
+  const selection = await selectOrganizationSession(req.user!.userId, organization);
   if (selection.kind === "conflict") {
     res.status(409).json({
       error: `A sessão ativa pertence à organização ${selection.session.organization}. Finalize-a antes de iniciar outra organização.`,
@@ -42,7 +43,7 @@ router.post("/select-organization", (req, res) => {
    Body: { action: "resume" | "new", organization? }
    Returns the session to use.
 */
-router.post("/resume", (req, res) => {
+router.post("/resume", async (req, res) => {
   const userId = req.user!.userId;
   const body = req.body as { action?: string; organization?: unknown };
   const action = body.action;
@@ -52,7 +53,7 @@ router.post("/resume", (req, res) => {
     return;
   }
 
-  const existing = getActiveSession(userId);
+  const existing = await getActiveSession(userId);
 
   if (action === "resume" && existing) {
     res.json({ session: existing });
@@ -77,15 +78,15 @@ router.post("/resume", (req, res) => {
     return;
   }
 
-  const session = createSession(userId, (organization ?? null) as Organization | null);
+  const session = await createSession(userId, (organization ?? null) as Organization | null);
   res.json({ session });
 });
 
 /* ── GET /api/sessions/current ──────────────────────────────────────────────
    Returns the active session for the authenticated user.
 */
-router.get("/current", (req, res) => {
-  const session = getActiveSession(req.user!.userId);
+router.get("/current", async (req, res) => {
+  const session = await getActiveSession(req.user!.userId);
   if (!session) {
     res.status(404).json({ error: "Nenhuma sessão ativa." });
     return;
@@ -96,27 +97,27 @@ router.get("/current", (req, res) => {
 /* ── PUT /api/sessions/ping ─────────────────────────────────────────────────
    Updates last_update for the user's active session.
 */
-router.put("/ping", (req, res) => {
-  const session = getActiveSession(req.user!.userId);
+router.put("/ping", async (req, res) => {
+  const session = await getActiveSession(req.user!.userId);
   if (!session) {
     res.status(404).json({ error: "Nenhuma sessão ativa." });
     return;
   }
-  updateSessionPing(session.id);
+  await updateSessionPing(session.id);
   res.json({ ok: true });
 });
 
 /* ── POST /api/sessions/encerrar ─────────────────────────────────────────────
    Ends the current session so the user can start a new organization.
 */
-router.post("/encerrar", (req, res) => {
-  const session = getActiveSession(req.user!.userId);
+router.post("/encerrar", async (req, res) => {
+  const session = await getActiveSession(req.user!.userId);
   if (!session) {
     res.status(404).json({ error: "Nenhuma sessão ativa." });
     return;
   }
 
-  finalizeSession(session.id);
+  await finalizeSession(session.id);
   res.json({ ok: true, sessionId: session.id });
 });
 
@@ -124,7 +125,7 @@ router.post("/encerrar", (req, res) => {
    Body: { sessionId, codigo, total, ignoredLogs? }
    Saves (upserts) the count for one item WITHOUT finalizing the session.
 */
-router.post("/salvar", (req, res) => {
+router.post("/salvar", async (req, res) => {
   const { sessionId, codigo, total, ignoredLogs } = req.body as {
     sessionId?: number;
     codigo?: string;
@@ -146,7 +147,7 @@ router.post("/salvar", (req, res) => {
     return;
   }
 
-  const session = getSessionById(sessionId);
+  const session = await getSessionById(sessionId);
   if (!session || session.user_id !== req.user!.userId) {
     res.status(403).json({ error: "Sessão inválida." });
     return;
@@ -156,7 +157,7 @@ router.post("/salvar", (req, res) => {
     return;
   }
 
-  const writeResult = saveSessionCount(sessionId, req.user!.userId, codigo, qty);
+  const writeResult = await saveSessionCount(sessionId, req.user!.userId, codigo, qty);
   if (writeResult !== "saved") {
     res.status(writeResult === "forbidden" ? 403 : 400).json({
       error: writeResult === "finished" ? "Sessão já foi finalizada." : "Sessão inválida.",
@@ -174,7 +175,7 @@ router.post("/salvar", (req, res) => {
    Body: { sessionId, codigo, total, ignoredLogs? }
    Saves counts, finalizes session.
 */
-router.post("/finalizar", (req, res) => {
+router.post("/finalizar", async (req, res) => {
   const { sessionId, codigo, total, ignoredLogs } = req.body as {
     sessionId?: number;
     codigo?: string;
@@ -196,7 +197,7 @@ router.post("/finalizar", (req, res) => {
     return;
   }
 
-  const session = getSessionById(sessionId);
+  const session = await getSessionById(sessionId);
   if (!session || session.user_id !== req.user!.userId) {
     res.status(403).json({ error: "Sessão inválida." });
     return;
@@ -206,7 +207,7 @@ router.post("/finalizar", (req, res) => {
     return;
   }
 
-  const writeResult = saveAndFinalizeSession(sessionId, req.user!.userId, codigo, qty);
+  const writeResult = await saveAndFinalizeSession(sessionId, req.user!.userId, codigo, qty);
   if (writeResult !== "saved") {
     res.status(writeResult === "forbidden" ? 403 : 400).json({
       error: writeResult === "finished" ? "Sessão já foi finalizada." : "Sessão inválida.",

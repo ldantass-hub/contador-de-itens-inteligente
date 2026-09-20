@@ -74,7 +74,7 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
     return;
   }
 
-  const user = findUserByUsername(cleanUser);
+  const user = await findUserByUsername(cleanUser);
   if (!user) {
     /*
      * Use a constant-time comparison even on the "not found" path to prevent
@@ -96,9 +96,9 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
   const safeUser = { id: user.id, username: user.username, role: user.role };
 
   /* Check for existing active session */
-  const existing = getActiveSession(user.id);
+  const existing = await getActiveSession(user.id);
   if (existing) {
-    const lastUpdate  = new Date(existing.last_update + "Z");
+    const lastUpdate  = new Date(existing.last_update);
     const ageMs       = Date.now() - lastUpdate.getTime();
     const twoHoursMs  = 2 * 60 * 60 * 1000;
 
@@ -107,7 +107,7 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
       return;
     }
 
-    finalizeSession(existing.id);
+    await finalizeSession(existing.id);
   }
 
   res.json({ token, user: safeUser, needsResume: false });
