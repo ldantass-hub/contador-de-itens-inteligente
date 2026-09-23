@@ -1,6 +1,5 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 
-const TOKEN_KEY   = "lg_inv_token";
 const USER_KEY    = "lg_inv_user";
 const SESSION_KEY = "lg_inv_session";
 
@@ -21,25 +20,14 @@ export interface AuthSession {
 }
 
 interface AuthContextValue {
-  token: string | null;
   user: AuthUser | null;
   session: AuthSession | null;
   isAdmin: boolean;
-  setAuth: (token: string, user: AuthUser, session: AuthSession) => void;
+  authReady: boolean;
+  setAuth: (user: AuthUser, session: AuthSession) => void;
   updateSession: (session: AuthSession) => void;
-  logout: () => void;
-  authHeader: () => Record<string, string>;
-  /**
-   * Authenticated fetch wrapper.
-   *
-   * Automatically injects the Bearer token header.
-   * If the server responds with 401 (token expired / invalid), the stored
-   * credentials are cleared and the user is redirected to /login so they
-   * can authenticate again — instead of receiving a silent save error.
-   *
-   * Usage: identical to the native `fetch` API, but without needing to add
-   * the Authorization header manually.
-   */
+  logout: () => Promise<void>;
+  /** Sends the HttpOnly authentication cookie with the request. */
   fetchAuth: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
@@ -55,86 +43,94 @@ function loadStored<T>(key: string): T | null {
 }
 
 function clearStored() {
-  localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(SESSION_KEY);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token,   setToken]   = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
-  const [user,    setUser]    = useState<AuthUser | null>(() => loadStored<AuthUser>(USER_KEY));
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<AuthSession | null>(() => loadStored<AuthSession>(SESSION_KEY));
+  const [authReady, setAuthReady] = useState(false);
 
-  const setAuth = useCallback((t: string, u: AuthUser, s: AuthSession) => {
-    localStorage.setItem(TOKEN_KEY,   t);
-    localStorage.setItem(USER_KEY,    JSON.stringify(u));
-    localStorage.setItem(SESSION_KEY, JSON.stringify(s));
-    setToken(t);
-    setUser(u);
-    setSession(s);
+  const setAuth = useCallback((nextUser: AuthUser, nextSession: AuthSession) => {
+    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+    setUser(nextUser);
+    setSession(nextSession);
   }, []);
 
-  const updateSession = useCallback((s: AuthSession) => {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(s));
-    setSession(s);
+  const updateSession = useCallback((nextSession: AuthSession) => {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(nextSession));
+    setSession(nextSession);
   }, []);
 
-  const logout = useCallback(() => {
-    clearStored();
-    setToken(null);
-    setUser(null);
-    setSession(null);
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } finally {
+      localStorage.removeItem("lg_inv_token");
+      clearStored();
+      setUser(null);
+      setSession(null);
+    }
   }, []);
 
-  const authHeader = useCallback((): Record<string, string> => {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [token]);
+  useEffect(() => {
+    let active = true;
 
-  /**
-   * Authenticated fetch — injects the token and handles token expiry.
-   *
-   * On 401: clear stored credentials and redirect to /login.
-   * On any other response: return the response as-is so callers can
-   * inspect status codes and body normally.
-   */
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(async response => {
+        if (!response.ok) throw new Error("Not authenticated");
+        return response.json() as Promise<{ user: AuthUser }>;
+      })
+      .then(data => {
+        if (!active) return;
+        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+        setUser(data.user);
+      })
+      .catch(() => {
+        if (!active) return;
+        clearStored();
+        setUser(null);
+        setSession(null);
+      })
+      .finally(() => {
+        if (active) setAuthReady(true);
+      });
+
+    return () => { active = false; };
+  }, []);
+
   const fetchAuth = useCallback(async (
     input: RequestInfo | URL,
     init: RequestInit = {},
   ): Promise<Response> => {
     const headers = new Headers(init.headers);
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-
-    const response = await fetch(input, { ...init, headers });
+    const response = await fetch(input, {
+      ...init,
+      headers,
+      credentials: "include",
+    });
 
     if (response.status === 401) {
-      /*
-       * Token is expired or was signed with a different secret.
-       * Clear local state and force re-login so the user gets a fresh token
-       * rather than seeing an opaque "Não foi possível salvar" error.
-       */
       clearStored();
-      setToken(null);
       setUser(null);
       setSession(null);
-      /* Hard-navigate so the Router re-mounts with clean state */
       window.location.replace("/login");
     }
 
     return response;
-  }, [token]);
+  }, []);
 
   return (
     <AuthContext.Provider value={{
-      token,
       user,
       session,
       isAdmin: user?.role === "admin",
+      authReady,
       setAuth,
       updateSession,
       logout,
-      authHeader,
       fetchAuth,
     }}>
       {children}

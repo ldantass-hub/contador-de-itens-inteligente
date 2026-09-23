@@ -3,7 +3,6 @@ import { useLocation } from "wouter";
 import { useAuth, type AuthUser, type AuthSession } from "@/lib/authContext";
 
 interface LoginResponse {
-  token: string;
   user: AuthUser;
   session?: AuthSession;
   activeSession?: AuthSession;
@@ -35,6 +34,7 @@ export default function Login() {
       const resp = await fetch("/api/auth/login", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body:    JSON.stringify({ username: username.trim(), password }),
       });
 
@@ -45,7 +45,12 @@ export default function Login() {
         return;
       }
 
-      setPendingLogin(data);
+      setPendingLogin({
+        user: data.user,
+        session: data.session,
+        activeSession: data.activeSession,
+        needsResume: data.needsResume,
+      });
       const activeOrganization = data.activeSession?.organization;
       setSelectedOrganization(
         ORGANIZATIONS.includes(activeOrganization as Organization)
@@ -75,8 +80,8 @@ export default function Login() {
         method:  "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${pendingLogin.token}`,
         },
+        credentials: "include",
         body: JSON.stringify({ organization: selectedOrganization }),
       });
 
@@ -86,7 +91,7 @@ export default function Login() {
         return;
       }
 
-      setAuth(pendingLogin.token, pendingLogin.user, data.session);
+      setAuth(pendingLogin.user, data.session);
       navigate("/");
     } catch {
       setError("Erro de conexão com o servidor.");

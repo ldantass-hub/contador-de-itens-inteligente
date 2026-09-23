@@ -181,7 +181,7 @@ export default function Admin() {
           <button className="app-btn app-btn-outline app-btn-sm" onClick={() => navigate("/")}>
             Voltar
           </button>
-          <button className="app-btn app-btn-outline app-btn-sm" onClick={() => { logout(); navigate("/login"); }}>
+          <button className="app-btn app-btn-outline app-btn-sm" onClick={async () => { await logout(); navigate("/login"); }}>
             Sair
           </button>
         </div>

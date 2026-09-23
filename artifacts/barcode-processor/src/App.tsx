@@ -14,18 +14,19 @@ function ProtectedRoute({ component: Component, adminOnly = false }: {
   component: React.ComponentType;
   adminOnly?: boolean;
 }) {
-  const { token, isAdmin } = useAuth();
-  if (!token) return <Redirect to="/login" />;
+  const { user, isAdmin } = useAuth();
+  if (!user) return <Redirect to="/login" />;
   if (adminOnly && !isAdmin) return <Redirect to="/" />;
   return <Component />;
 }
 
 function Router() {
-  const { token } = useAuth();
+  const { user, authReady } = useAuth();
+  if (!authReady) return null;
   return (
     <Switch>
       <Route path="/login">
-        {token ? <Redirect to="/" /> : <Login />}
+        {user ? <Redirect to="/" /> : <Login />}
       </Route>
       <Route path="/admin">
         <ProtectedRoute component={Admin} adminOnly />

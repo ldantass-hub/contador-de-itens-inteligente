@@ -49,7 +49,7 @@ function parseLogEntry(log: string): { code: string | null; quantity: number | n
 }
 
 export default function Home() {
-  const { user, session, isAdmin, authHeader, fetchAuth, logout } = useAuth();
+  const { user, session, isAdmin, fetchAuth, logout } = useAuth();
   const [, navigate] = useLocation();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -83,8 +83,6 @@ export default function Home() {
 
   const liveResult   = rawLines.length > 0 ? processInput(rawLines.join("\n")) : null;
   const runningTotal = liveResult?.total ?? 0;
-
-  const hdr = () => ({ ...authHeader(), "Content-Type": "application/json" });
 
   function closePasswordModal() {
     setShowPasswordModal(false);
@@ -322,8 +320,8 @@ export default function Home() {
       .catch(() => showToast("Erro ao exportar", "Não foi possível gerar o arquivo Excel.", "error"));
   }
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     navigate("/login");
   }
 
@@ -337,7 +335,7 @@ export default function Home() {
     try {
       const resp = await fetchAuth(`${SESSIONS_API}/encerrar`, { method: "POST" });
       if (!resp.ok) throw new Error(await resp.text());
-      logout();
+      await logout();
       navigate("/login");
     } catch {
       showToast("Erro ao finalizar", "Não foi possível finalizar a sessão atual.", "error");
