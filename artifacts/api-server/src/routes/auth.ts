@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { findUserByUsername, findUserById, getActiveSession, finalizeSession, updateUserPassword } from "../lib/db.js";
 import { signToken } from "../lib/jwtUtils.js";
+import { ACCESS_TOKEN_COOKIE, accessTokenCookieOptions } from "../lib/authCookie.js";
 import { authenticate } from "../middlewares/authenticate.js";
 
 const router = Router();
@@ -94,6 +95,7 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
 
   const token    = signToken({ userId: user.id, username: user.username, role: user.role });
   const safeUser = { id: user.id, username: user.username, role: user.role };
+  res.cookie(ACCESS_TOKEN_COOKIE, token, accessTokenCookieOptions);
 
   /* Check for existing active session */
   const existing = await getActiveSession(user.id);
@@ -118,6 +120,12 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
 */
 router.get("/me", authenticate, (req, res) => {
   res.json({ user: req.user });
+});
+
+/* ── POST /api/auth/logout ────────────────────────────────────────────────── */
+router.post("/logout", (_req, res) => {
+  res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenCookieOptions);
+  res.json({ message: "Logout realizado com sucesso." });
 });
 
 /* ── PUT /api/auth/password ──────────────────────────────────────────────── */

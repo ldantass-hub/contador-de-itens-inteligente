@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import router from "./routes/index.js";
@@ -36,7 +37,7 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
    In development the Replit proxy rewrites origins, so we also allow the
    *.replit.dev and *.replit.app wildcard patterns.
 */
-const allowedOriginPattern = /^https?:\/\/(localhost(:\d+)?|.*\.replit\.dev|.*\.replit\.app|.*\.riker\.replit\.dev)$/;
+const allowedOriginPattern = /^https?:\/\/(localhost:5173|.*\.replit\.dev|.*\.replit\.app|.*\.riker\.replit\.dev)$/;
 
 app.use(
   cors({
@@ -50,10 +51,12 @@ app.use(
     },
     methods:      ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials:  false,
+    credentials:  true,
     maxAge:       86400, /* cache preflight for 24 h */
   }),
 );
+
+app.use(cookieParser());
 
 /* ── Request body limits ────────────────────────────────────────────────────
    Prevents memory exhaustion from oversized JSON payloads.

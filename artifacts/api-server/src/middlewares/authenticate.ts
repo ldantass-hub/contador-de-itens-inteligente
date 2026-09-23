@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { verifyToken, type JwtPayload } from "../lib/jwtUtils.js";
+import { ACCESS_TOKEN_COOKIE } from "../lib/authCookie.js";
 
 declare global {
   namespace Express {
@@ -10,13 +11,16 @@ declare global {
 }
 
 export function authenticate(req: Request, res: Response, next: NextFunction): void {
+  const cookieToken = req.cookies?.[ACCESS_TOKEN_COOKIE];
   const header = req.headers.authorization;
-  if (!header || !header.startsWith("Bearer ")) {
+  const bearerToken = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+  const token = cookieToken ?? bearerToken;
+
+  if (!token) {
     res.status(401).json({ error: "Não autenticado." });
     return;
   }
 
-  const token = header.slice(7);
   const payload = verifyToken(token);
   if (!payload) {
     res.status(401).json({ error: "Token inválido ou expirado." });
