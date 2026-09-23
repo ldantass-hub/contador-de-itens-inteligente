@@ -33,11 +33,9 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
 
 /* ── CORS ───────────────────────────────────────────────────────────────────
    Restrict cross-origin access to known origins.
-   CORS_ORIGIN env var overrides — set it in production to the exact domain.
-   In development the Replit proxy rewrites origins, so we also allow the
-   *.replit.dev and *.replit.app wildcard patterns.
+  CORS_ORIGIN env var overrides — set it in production to the exact domain.
 */
-const allowedOriginPattern = /^https?:\/\/(localhost:5173|.*\.replit\.dev|.*\.replit\.app|.*\.riker\.replit\.dev)$/;
+const allowedOriginPattern = /^https?:\/\/localhost:5173$/;
 
 app.use(
   cors({
