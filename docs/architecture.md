@@ -79,7 +79,7 @@ As rotas administrativas exigem autenticação e role `admin`.
 
 O backend emite um JWT após o login e o envia no cookie `access_token`, configurado como HttpOnly, `Path=/`, `SameSite=Lax` e `Secure` em produção. O frontend envia cookies com `credentials: "include"` e valida a sessão inicial por `GET /api/auth/me`.
 
-O middleware `authenticate` valida o cookie de acesso. Durante a transição de autenticação, o backend também mantém suporte temporário ao header Bearer para clientes legados. O frontend atual não armazena JWT no `localStorage` nem monta headers Bearer.
+O middleware `authenticate` valida exclusivamente o cookie de acesso. O frontend não armazena JWT no `localStorage` nem monta headers Bearer.
 
 Rotas administrativas usam `requireAdmin` e verificam o role `admin` presente na identidade autenticada.
 

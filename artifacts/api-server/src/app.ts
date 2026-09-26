@@ -3,8 +3,10 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
-import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
+import { isTrustedOrigin } from "./lib/trustedOrigins.js";
+import { requireTrustedOrigin } from "./middlewares/requireTrustedOrigin.js";
+import router from "./routes/index.js";
 
 const app: Express = express();
 
@@ -25,24 +27,16 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-/* ── CORS ───────────────────────────────────────────────────────────────────
-   Restrict cross-origin access to known origins.
-  CORS_ORIGIN env var overrides — set it in production to the exact domain.
-*/
-const allowedOriginPattern = /^https?:\/\/localhost:5173$/;
+/* Reject cross-origin mutations before CORS or route handling. */
+app.use("/api", requireTrustedOrigin);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      /* Allow same-origin requests (no Origin header) and known patterns */
-      if (!origin || allowedOriginPattern.test(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin '${origin}' not allowed`));
-      }
+      callback(null, origin === undefined || isTrustedOrigin(origin));
     },
-    methods:      ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods:      ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
     credentials:  true,
     maxAge:       86400, /* cache preflight for 24 h */
   }),

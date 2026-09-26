@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, type React
 
 const USER_KEY    = "lg_inv_user";
 const SESSION_KEY = "lg_inv_session";
+const LEGACY_TOKEN_KEY = "lg_inv_token";
 
 export interface AuthUser {
   id: number;
@@ -68,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
     } finally {
-      localStorage.removeItem("lg_inv_token");
+      localStorage.removeItem(LEGACY_TOKEN_KEY);
       clearStored();
       setUser(null);
       setSession(null);
@@ -77,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
 
     fetch("/api/auth/me", { credentials: "include" })
       .then(async response => {

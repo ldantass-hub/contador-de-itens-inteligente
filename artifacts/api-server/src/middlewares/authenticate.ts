@@ -11,10 +11,7 @@ declare global {
 }
 
 export function authenticate(req: Request, res: Response, next: NextFunction): void {
-  const cookieToken = req.cookies?.[ACCESS_TOKEN_COOKIE];
-  const header = req.headers.authorization;
-  const bearerToken = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
-  const token = cookieToken ?? bearerToken;
+  const token = req.cookies?.[ACCESS_TOKEN_COOKIE];
 
   if (!token) {
     res.status(401).json({ error: "Não autenticado." });

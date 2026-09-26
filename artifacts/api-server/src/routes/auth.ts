@@ -54,8 +54,9 @@ const loginUsernameLimiter = rateLimit({
 });
 
 /* ── POST /api/auth/login ───────────────────────────────────────────────────
-   Body: { username, password }
-   Returns the token and, when applicable, the active session that must be resumed.
+  Body: { username, password }
+  Sets the authentication cookie and, when applicable, returns the active
+  session that must be resumed.
    A new session is created only after the organization is selected.
 */
 router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => {
@@ -105,14 +106,14 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
     const twoHoursMs  = 2 * 60 * 60 * 1000;
 
     if (ageMs < twoHoursMs) {
-      res.json({ token, user: safeUser, activeSession: existing, needsResume: true });
+      res.json({ user: safeUser, activeSession: existing, needsResume: true });
       return;
     }
 
     await finalizeSession(existing.id);
   }
 
-  res.json({ token, user: safeUser, needsResume: false });
+  res.json({ user: safeUser, needsResume: false });
 });
 
 /* ── GET /api/auth/me ───────────────────────────────────────────────────────
