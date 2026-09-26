@@ -8,12 +8,6 @@ import { logger } from "./lib/logger.js";
 
 const app: Express = express();
 
-/* ── Trust Replit's reverse proxy ───────────────────────────────────────────
-   Required so that req.ip reflects the real client IP (used by rate limiters)
-   rather than the proxy's internal address.
-*/
-app.set("trust proxy", 1);
-
 /* ── Security headers (helmet-equivalent, no extra dependency) ──────────────
    Applied before every response.  These stop the most common passive attacks:
    - X-Content-Type-Options: nosniff   → blocks MIME-type sniffing
