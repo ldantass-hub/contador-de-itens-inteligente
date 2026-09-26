@@ -51,7 +51,12 @@ router.post("/users", async (req, res) => {
     const id = await createUser(username, body.password, body.role);
     res.status(201).json({ user: { id, username, role: body.role } });
   } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      (("code" in error && error.code === "23505") ||
+        ("cause" in error && typeof error.cause === "object" && error.cause !== null && "code" in error.cause && error.cause.code === "23505"))
+    ) {
       res.status(409).json({ error: "Esse usuário já existe." });
       return;
     }
