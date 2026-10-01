@@ -24,8 +24,6 @@ interface AdminUser {
   role: string;
 }
 
-type NewUserRole = "user" | "admin";
-
 export default function Admin() {
   const { user, isAdmin, fetchAuth, logout } = useAuth();
   const [, navigate] = useLocation();
@@ -41,14 +39,6 @@ export default function Admin() {
   const [filterDateTo,   setFilterDateTo]   = useState("");
   const [loading,        setLoading]        = useState(false);
   const [error,          setError]          = useState("");
-  const [newUsername,    setNewUsername]    = useState("");
-  const [newPassword,    setNewPassword]    = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [newRole,        setNewRole]        = useState<NewUserRole>("user");
-  const [createError,    setCreateError]    = useState("");
-  const [createSuccess,  setCreateSuccess]  = useState("");
-  const [creatingUser,   setCreatingUser]   = useState(false);
-
   const fetchSessions = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -80,56 +70,6 @@ export default function Admin() {
 
     fetchSessions();
   }, [isAdmin]);
-
-  async function createAdminUser(e: React.FormEvent) {
-    e.preventDefault();
-    setCreateError("");
-    setCreateSuccess("");
-
-    const username = newUsername.trim();
-    if (username.length < 3 || username.length > 100) {
-      setCreateError("O usuário deve ter entre 3 e 100 caracteres.");
-      return;
-    }
-    if (newPassword.length < 12) {
-      setCreateError("A senha deve ter no mínimo 12 caracteres.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setCreateError("A confirmação da senha não confere.");
-      return;
-    }
-
-    setCreatingUser(true);
-    try {
-      const resp = await fetchAuth("/api/admin/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password: newPassword, role: newRole }),
-      });
-      const data = await resp.json() as { user?: AdminUser; error?: string };
-      if (!resp.ok) {
-        setCreateError(data.error ?? (
-          resp.status === 401 ? "Sua sessão expirou. Entre novamente." :
-          resp.status === 403 ? "Você não tem permissão para criar usuários." :
-          "Não foi possível criar o usuário."
-        ));
-        return;
-      }
-      if (data.user) {
-        setUsers(current => [...current, data.user!].sort((left, right) => left.username.localeCompare(right.username)));
-      }
-      setNewUsername("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setNewRole("user");
-      setCreateSuccess("Usuário criado com sucesso.");
-    } catch {
-      setCreateError("Erro de conexão com o servidor.");
-    } finally {
-      setCreatingUser(false);
-    }
-  }
 
   async function fetchDetail(session: AdminSession) {
     setDetailSession(session);
@@ -180,6 +120,9 @@ export default function Admin() {
           <span className="admin-user-badge">{user?.username}</span>
           <button className="app-btn app-btn-outline app-btn-sm" onClick={() => navigate("/")}>
             Voltar
+          </button>
+          <button className="app-btn app-btn-outline app-btn-sm" onClick={() => navigate("/admin/users")}>
+            Gerenciar usuários
           </button>
           <button className="app-btn app-btn-outline app-btn-sm" onClick={async () => { await logout(); navigate("/login"); }}>
             Sair
@@ -235,62 +178,6 @@ export default function Admin() {
         </div>
 
         {error && <div className="admin-error">{error}</div>}
-
-        <div className="app-card admin-filters">
-          <div className="compare-header">Criar usuário</div>
-          <form className="filters-row" onSubmit={createAdminUser}>
-            <div className="filter-group">
-              <label htmlFor="new-username">Usuário</label>
-              <input
-                id="new-username"
-                type="text"
-                value={newUsername}
-                onChange={e => setNewUsername(e.target.value)}
-                autoComplete="off"
-                disabled={creatingUser}
-              />
-            </div>
-            <div className="filter-group">
-              <label htmlFor="new-password">Senha</label>
-              <input
-                id="new-password"
-                type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                autoComplete="new-password"
-                disabled={creatingUser}
-              />
-            </div>
-            <div className="filter-group">
-              <label htmlFor="confirm-password">Confirmar senha</label>
-              <input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                autoComplete="new-password"
-                disabled={creatingUser}
-              />
-            </div>
-            <div className="filter-group">
-              <label htmlFor="new-role">Perfil</label>
-              <select
-                id="new-role"
-                value={newRole}
-                onChange={e => setNewRole(e.target.value as NewUserRole)}
-                disabled={creatingUser}
-              >
-                <option value="user">Usuário</option>
-                <option value="admin">Supervisor</option>
-              </select>
-            </div>
-            <button className="app-btn app-btn-primary app-btn-sm" type="submit" disabled={creatingUser}>
-              {creatingUser ? "Criando..." : "Criar"}
-            </button>
-          </form>
-          {createError && <div className="admin-error">{createError}</div>}
-          {createSuccess && <div className="admin-success">{createSuccess}</div>}
-        </div>
 
         <div className="admin-main-grid">
 

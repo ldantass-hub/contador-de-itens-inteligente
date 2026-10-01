@@ -93,6 +93,30 @@ export async function createUser(username: string, password: string, role: "user
   return user.id;
 }
 
+export type RemoveUserResult = "deleted" | "not_found" | "self" | "has_history";
+
+export async function removeUserIfNoHistory(userId: number, actingUserId: number): Promise<RemoveUserResult> {
+  if (userId === actingUserId) return "self";
+
+  return db.transaction(async (tx) => {
+    const [target] = await tx.select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update")
+      .limit(1);
+    if (!target) return "not_found";
+
+    const [session] = await tx.select({ id: sessions.id })
+      .from(sessions)
+      .where(eq(sessions.userId, userId))
+      .limit(1);
+    if (session) return "has_history";
+
+    await tx.delete(users).where(eq(users.id, userId));
+    return "deleted";
+  });
+}
+
 export async function updateUserPassword(userId: number, passwordHash: string): Promise<boolean> {
   const result = await db.update(users)
     .set({ password: passwordHash })

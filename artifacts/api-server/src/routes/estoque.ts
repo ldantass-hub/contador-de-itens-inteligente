@@ -9,6 +9,7 @@ import {
   getSessionById,
   saveAndFinalizeSession,
 } from "../lib/db.js";
+import { parsePostgresQuantity } from "../lib/inputValidation.js";
 
 const router = Router();
 router.use(authenticate);
@@ -16,6 +17,20 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, /* 5 MB cap — prevent memory exhaustion */
 });
+const XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function isXlsxUpload(file: Express.Multer.File): boolean {
+  return file.originalname.toLowerCase().endsWith(".xlsx") &&
+    file.mimetype.toLowerCase() === XLSX_MIME_TYPE &&
+    file.buffer.length >= 4 &&
+    file.buffer[0] === 0x50 && file.buffer[1] === 0x4b &&
+    file.buffer[2] === 0x03 && file.buffer[3] === 0x04;
+}
+
+function isWorkbookFormatError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /can't find end of central directory|corrupted zip|end of data reached|^\d+:\d+:\s*(?:unexpected|invalid|expected)\b/i.test(error.message);
+}
 
 /*
  * C1 FIX — Per-session Excel store
@@ -86,9 +101,9 @@ router.post("/finalizar", async (req, res) => {
     res.status(400).json({ error: "Campo 'codigo' é obrigatório." });
     return;
   }
-  const qty = Number(total);
-  if (!Number.isFinite(qty) || qty < 0) {
-    res.status(400).json({ error: "Campo 'total' deve ser um número não-negativo." });
+  const qty = parsePostgresQuantity(total);
+  if (qty === null) {
+    res.status(400).json({ error: "Campo 'total' deve ser um número inteiro entre 0 e 2147483647." });
     return;
   }
   const session = await getActiveSession(req.user!.userId);
@@ -129,6 +144,10 @@ router.post("/upload", upload.single("planilha"), async (req, res) => {
     res.status(400).json({ error: "Nenhum arquivo enviado." });
     return;
   }
+  if (!isXlsxUpload(req.file)) {
+    res.status(400).json({ error: "Envie um arquivo Excel .xlsx válido." });
+    return;
+  }
   const session = await getActiveSession(req.user!.userId);
   if (!session) {
     res.status(409).json({ error: "Inicie uma sessão antes de importar uma planilha." });
@@ -137,7 +156,7 @@ router.post("/upload", upload.single("planilha"), async (req, res) => {
   try {
     const wb = new ExcelJS.Workbook();
      const workbookBuffer = req.file.buffer as unknown as Parameters<typeof wb.xlsx.load>[0];
-     await wb.xlsx.load(workbookBuffer);
+    await wb.xlsx.load(workbookBuffer);
     const sheet = wb.worksheets[0];
     if (!sheet) {
       res.status(400).json({ error: "Planilha vazia ou inválida." });
@@ -163,8 +182,12 @@ router.post("/upload", upload.single("planilha"), async (req, res) => {
     pruneExcelStores();
 
     res.json({ ok: true, rows: store.size });
-  } catch {
-    res.status(500).json({ error: "Erro ao ler planilha." });
+  } catch (error) {
+    if (isWorkbookFormatError(error)) {
+      res.status(400).json({ error: "Planilha inválida ou corrompida." });
+      return;
+    }
+    throw error;
   }
 });
 

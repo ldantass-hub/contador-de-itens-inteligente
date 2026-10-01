@@ -12,6 +12,7 @@ import {
   appendIgnoredLog,
 } from "../lib/db.js";
 import { isOrganization, type Organization } from "../lib/organizations.js";
+import { parsePostgresId, parsePostgresQuantity } from "../lib/inputValidation.js";
 
 const router = Router();
 router.use(authenticate);
@@ -126,24 +127,25 @@ router.post("/encerrar", async (req, res) => {
    Saves (upserts) the count for one item WITHOUT finalizing the session.
 */
 router.post("/salvar", async (req, res) => {
-  const { sessionId, codigo, total, ignoredLogs } = req.body as {
-    sessionId?: number;
-    codigo?: string;
-    total?: number;
-    ignoredLogs?: string[];
+  const { sessionId: rawSessionId, codigo, total, ignoredLogs } = req.body as {
+    sessionId?: unknown;
+    codigo?: unknown;
+    total?: unknown;
+    ignoredLogs?: unknown;
   };
 
-  if (!sessionId) {
-    res.status(400).json({ error: "sessionId é obrigatório." });
+  const sessionId = parsePostgresId(rawSessionId);
+  if (sessionId === null) {
+    res.status(400).json({ error: "sessionId inválido." });
     return;
   }
   if (!codigo || typeof codigo !== "string") {
     res.status(400).json({ error: "Campo 'codigo' é obrigatório." });
     return;
   }
-  const qty = Number(total);
-  if (!Number.isFinite(qty) || qty < 0) {
-    res.status(400).json({ error: "Campo 'total' deve ser um número não-negativo." });
+  const qty = parsePostgresQuantity(total);
+  if (qty === null) {
+    res.status(400).json({ error: "Campo 'total' deve ser um número inteiro entre 0 e 2147483647." });
     return;
   }
 
@@ -176,24 +178,25 @@ router.post("/salvar", async (req, res) => {
    Saves counts, finalizes session.
 */
 router.post("/finalizar", async (req, res) => {
-  const { sessionId, codigo, total, ignoredLogs } = req.body as {
-    sessionId?: number;
-    codigo?: string;
-    total?: number;
-    ignoredLogs?: string[];
+  const { sessionId: rawSessionId, codigo, total, ignoredLogs } = req.body as {
+    sessionId?: unknown;
+    codigo?: unknown;
+    total?: unknown;
+    ignoredLogs?: unknown;
   };
 
-  if (!sessionId) {
-    res.status(400).json({ error: "sessionId é obrigatório." });
+  const sessionId = parsePostgresId(rawSessionId);
+  if (sessionId === null) {
+    res.status(400).json({ error: "sessionId inválido." });
     return;
   }
   if (!codigo || typeof codigo !== "string") {
     res.status(400).json({ error: "Campo 'codigo' é obrigatório." });
     return;
   }
-  const qty = Number(total);
-  if (!Number.isFinite(qty) || qty < 0) {
-    res.status(400).json({ error: "Campo 'total' deve ser um número não-negativo." });
+  const qty = parsePostgresQuantity(total);
+  if (qty === null) {
+    res.status(400).json({ error: "Campo 'total' deve ser um número inteiro entre 0 e 2147483647." });
     return;
   }
 

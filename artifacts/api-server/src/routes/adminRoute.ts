@@ -7,8 +7,10 @@ import {
   getSessionCounts,
   getAllUsers,
   createUser,
+  removeUserIfNoHistory,
 } from "../lib/db.js";
 import { isOrganization, type Organization } from "../lib/organizations.js";
+import { parsePostgresId } from "../lib/inputValidation.js";
 
 const router = Router();
 router.use(authenticate, requireAdmin);
@@ -61,6 +63,41 @@ router.post("/users", async (req, res) => {
       return;
     }
     res.status(500).json({ error: "Não foi possível criar o usuário." });
+  }
+});
+
+router.delete("/users/:userId", async (req, res) => {
+  const userId = parsePostgresId(req.params.userId);
+  if (userId === null) {
+    res.status(400).json({ error: "ID de usuário inválido." });
+    return;
+  }
+
+  try {
+    const result = await removeUserIfNoHistory(userId, req.user!.userId);
+    if (result === "not_found") {
+      res.status(404).json({ error: "Usuário não encontrado." });
+      return;
+    }
+    if (result === "self") {
+      res.status(409).json({ error: "Você não pode remover sua própria conta." });
+      return;
+    }
+    if (result === "has_history") {
+      res.status(409).json({ error: "O usuário possui sessões ou histórico vinculado e não pode ser removido." });
+      return;
+    }
+
+    res.json({ message: "Usuário removido com sucesso." });
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? error.code
+      : undefined;
+    if (code === "23503") {
+      res.status(409).json({ error: "O usuário possui sessões ou histórico vinculado e não pode ser removido." });
+      return;
+    }
+    res.status(500).json({ error: "Não foi possível remover o usuário." });
   }
 });
 

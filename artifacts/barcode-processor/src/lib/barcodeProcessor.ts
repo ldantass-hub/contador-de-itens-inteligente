@@ -42,8 +42,8 @@ function isExceptionCode(text: string): boolean {
 
 /**
  * Strip all leading non-alphanumeric characters from a scanned string.
- * Applied before any parsing so scanner prefixes (e.g. P, ], ««) are
- * transparently removed. Middle and trailing characters are never touched.
+ * Applied before parsing so punctuation scanner prefixes are removed.
+ * Middle and trailing characters are never touched.
  */
 function sanitizeInput(raw: string): string {
   let i = 0;
@@ -51,6 +51,10 @@ function sanitizeInput(raw: string): string {
     i++;
   }
   return raw.slice(i);
+}
+
+function removeSpuriousScannerPrefix(raw: string): string {
+  return raw.startsWith("P") ? raw.slice(1) : raw;
 }
 
 /* ── Primitive validators ────────────────────────────────────────────────── */
@@ -180,8 +184,8 @@ export function processInput(rawInput: string): ProcessResult {
 
   for (let i = 0; i < lines.length; i++) {
     const lineNum = i + 1;
-    const raw     = lines[i].replace(/\r?\n/, "").trim();
-    const line    = sanitizeInput(raw);
+    const raw     = lines[i].replace(/\r?\n/, "");
+    const line    = sanitizeInput(removeSpuriousScannerPrefix(raw).trim());
 
     if (line.length === 0) continue;
 

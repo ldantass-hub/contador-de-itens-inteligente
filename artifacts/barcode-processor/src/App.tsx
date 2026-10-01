@@ -6,6 +6,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Login from "@/pages/login";
 import Admin from "@/pages/admin";
+import UserManagement from "@/pages/user-management";
 import { AuthProvider, useAuth } from "@/lib/authContext";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,9 @@ function Router() {
     <Switch>
       <Route path="/login">
         {user ? <Redirect to="/" /> : <Login />}
+      </Route>
+      <Route path="/admin/users">
+        <ProtectedRoute component={UserManagement} adminOnly />
       </Route>
       <Route path="/admin">
         <ProtectedRoute component={Admin} adminOnly />
