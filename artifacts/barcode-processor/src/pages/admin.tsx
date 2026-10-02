@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/authContext";
 interface AdminSession {
   id: number;
   username: string;
+  operator_user_id: number;
   organization: string | null;
   start_time: string;
   end_time: string | null;
@@ -24,12 +25,18 @@ interface AdminUser {
   role: string;
 }
 
+interface SessionOperator {
+  id: number;
+  username: string;
+}
+
 export default function Admin() {
   const { user, isAdmin, fetchAuth, logout } = useAuth();
   const [, navigate] = useLocation();
 
   const [sessions,       setSessions]       = useState<AdminSession[]>([]);
   const [users,          setUsers]          = useState<AdminUser[]>([]);
+  const [sessionOperators, setSessionOperators] = useState<SessionOperator[]>([]);
   const [detailSession,  setDetailSession]  = useState<AdminSession | null>(null);
   const [detailCounts,   setDetailCounts]   = useState<SessionCount[]>([]);
   const [filterUser,     setFilterUser]     = useState("");
@@ -66,6 +73,11 @@ export default function Admin() {
     fetchAuth("/api/admin/users")
       .then(r => r.json())
       .then(data => setUsers(data as AdminUser[]))
+      .catch(() => {});
+
+    fetchAuth("/api/admin/session-operators")
+      .then(r => r.json())
+      .then(data => setSessionOperators(data as SessionOperator[]))
       .catch(() => {});
 
     fetchSessions();
@@ -139,7 +151,7 @@ export default function Admin() {
               <label>Usuário</label>
               <select value={filterUser} onChange={e => setFilterUser(e.target.value)}>
                 <option value="">Todos</option>
-                {users.map(u => (
+                {[...new Map([...users, ...sessionOperators].map(item => [item.id, item])).values()].map(u => (
                   <option key={u.id} value={u.id}>{u.username}</option>
                 ))}
               </select>

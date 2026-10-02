@@ -6,8 +6,9 @@ import {
   getSessionById,
   getSessionCounts,
   getAllUsers,
+  getSessionOperators,
   createUser,
-  removeUserIfNoHistory,
+  removeUser,
 } from "../lib/db.js";
 import { isOrganization, type Organization } from "../lib/organizations.js";
 import { parsePostgresId } from "../lib/inputValidation.js";
@@ -74,7 +75,7 @@ router.delete("/users/:userId", async (req, res) => {
   }
 
   try {
-    const result = await removeUserIfNoHistory(userId, req.user!.userId);
+    const result = await removeUser(userId, req.user!.userId);
     if (result === "not_found") {
       res.status(404).json({ error: "Usuário não encontrado." });
       return;
@@ -83,18 +84,13 @@ router.delete("/users/:userId", async (req, res) => {
       res.status(409).json({ error: "Você não pode remover sua própria conta." });
       return;
     }
-    if (result === "has_history") {
-      res.status(409).json({ error: "O usuário possui sessões ou histórico vinculado e não pode ser removido." });
-      return;
-    }
-
     res.json({ message: "Usuário removido com sucesso." });
   } catch (error) {
     const code = typeof error === "object" && error !== null && "code" in error
       ? error.code
       : undefined;
     if (code === "23503") {
-      res.status(409).json({ error: "O usuário possui sessões ou histórico vinculado e não pode ser removido." });
+      res.status(409).json({ error: "Não foi possível remover o usuário por uma referência ainda existente." });
       return;
     }
     res.status(500).json({ error: "Não foi possível remover o usuário." });
@@ -147,6 +143,10 @@ router.get("/sessions", async (req, res) => {
   res.json(sessions);
 });
 
+router.get("/session-operators", async (_req, res) => {
+  res.json(await getSessionOperators());
+});
+
 /* ── GET /api/admin/sessions/:id ────────────────────────────────────────────
    MEDIUM FIX — validate :id is a positive integer before DB lookup.
 */
@@ -186,6 +186,7 @@ router.get("/sessions/:id/export", async (req, res) => {
   const wb    = new ExcelJS.Workbook();
   const sheet = wb.addWorksheet("Sessão");
   sheet.columns = [
+    { header: "OPERADOR",    key: "operator",    width: 24 },
     { header: "ORGANIZAÇÃO", key: "organization", width: 16 },
     { header: "ITEM",       key: "code",     width: 24 },
     { header: "QUANTIDADE", key: "quantity",  width: 16 },
@@ -194,6 +195,7 @@ router.get("/sessions/:id/export", async (req, res) => {
   sheet.getRow(1).fill      = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
   sheet.getRow(1).alignment = { horizontal: "center" };
   counts.forEach(c => sheet.addRow({
+    operator: session.operator_username,
     organization: session.organization ?? "Não informada",
     code: c.code,
     quantity: c.quantity,

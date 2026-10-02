@@ -27,8 +27,11 @@ export const sessions = pgTable(
     id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
 
     userId: integer("user_id")
-      .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: "set null" }),
+
+    operatorUserId: integer("operator_user_id").notNull(),
+
+    operatorUsername: text("operator_username").notNull(),
 
     organization: text("organization"),
 

@@ -12,7 +12,9 @@ export interface AuthUser {
 
 export interface AuthSession {
   id: number;
-  user_id: number;
+  user_id: number | null;
+  operator_user_id: number;
+  operator_username: string;
   organization: string | null;
   start_time: string;
   end_time: string | null;

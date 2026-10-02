@@ -56,7 +56,9 @@ export interface DbUser {
 
 export interface DbSession {
   id: number;
-  user_id: number;
+  user_id: number | null;
+  operator_user_id: number;
+  operator_username: string;
   organization: Organization | null;
   start_time: string;
   end_time: string | null;
@@ -93,9 +95,9 @@ export async function createUser(username: string, password: string, role: "user
   return user.id;
 }
 
-export type RemoveUserResult = "deleted" | "not_found" | "self" | "has_history";
+export type RemoveUserResult = "deleted" | "not_found" | "self";
 
-export async function removeUserIfNoHistory(userId: number, actingUserId: number): Promise<RemoveUserResult> {
+export async function removeUser(userId: number, actingUserId: number): Promise<RemoveUserResult> {
   if (userId === actingUserId) return "self";
 
   return db.transaction(async (tx) => {
@@ -106,11 +108,17 @@ export async function removeUserIfNoHistory(userId: number, actingUserId: number
       .limit(1);
     if (!target) return "not_found";
 
-    const [session] = await tx.select({ id: sessions.id })
+    const userSessions = await tx.select({ id: sessions.id })
       .from(sessions)
       .where(eq(sessions.userId, userId))
-      .limit(1);
-    if (session) return "has_history";
+      .orderBy(sessions.id)
+      .for("update");
+
+    if (userSessions.length > 0) {
+      await tx.update(sessions)
+        .set({ status: "finished", endTime: new Date().toISOString() })
+        .where(and(eq(sessions.userId, userId), eq(sessions.status, "active")));
+    }
 
     await tx.delete(users).where(eq(users.id, userId));
     return "deleted";
@@ -134,6 +142,8 @@ function mapSession(session: typeof sessions.$inferSelect): DbSession {
   return {
     id: session.id,
     user_id: session.userId,
+    operator_user_id: session.operatorUserId,
+    operator_username: session.operatorUsername,
     organization: session.organization as Organization | null,
     start_time: toIsoTimestamp(session.startTime)!,
     end_time: toIsoTimestamp(session.endTime),
@@ -150,8 +160,22 @@ export async function getActiveSession(userId: number): Promise<DbSession | unde
 }
 
 export async function createSession(userId: number, organization: Organization | null = null): Promise<DbSession> {
-  const [session] = await db.insert(sessions).values({ userId, organization }).returning();
-  return mapSession(session);
+  return db.transaction(async (tx) => {
+    const [operator] = await tx.select({ id: users.id, username: users.username })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("key share")
+      .limit(1);
+    if (!operator) throw new Error("Cannot create a session for a missing user.");
+
+    const [session] = await tx.insert(sessions).values({
+      userId,
+      operatorUserId: operator.id,
+      operatorUsername: operator.username,
+      organization,
+    }).returning();
+    return mapSession(session);
+  });
 }
 
 export type OrganizationSelectionResult =
@@ -168,9 +192,16 @@ export async function selectOrganizationSession(
   organization: Organization,
 ): Promise<OrganizationSelectionResult> {
   return db.transaction(async (tx) => {
+    const [operator] = await tx.select({ id: users.id, username: users.username })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("key share")
+      .limit(1);
+    if (!operator) throw new Error("Cannot create a session for a missing user.");
+
     const [existing] = await tx.select().from(sessions)
       .where(and(eq(sessions.userId, userId), eq(sessions.status, "active")))
-      .orderBy(desc(sessions.startTime)).limit(1);
+      .orderBy(desc(sessions.startTime)).for("update").limit(1);
     if (existing) {
       const mappedExisting = mapSession(existing);
       if (mappedExisting.organization && mappedExisting.organization !== organization) {
@@ -188,7 +219,12 @@ export async function selectOrganizationSession(
       return { kind: "selected", session: mappedExisting } as const;
     }
 
-    const [created] = await tx.insert(sessions).values({ userId, organization }).returning();
+    const [created] = await tx.insert(sessions).values({
+      userId,
+      operatorUserId: operator.id,
+      operatorUsername: operator.username,
+      organization,
+    }).returning();
     return { kind: "selected", session: mapSession(created) } as const;
   });
 }
@@ -198,28 +234,47 @@ export async function assignSessionOrganization(
   userId: number,
   organization: Organization,
 ): Promise<DbSession | undefined> {
-  const session = await getSessionById(sessionId);
-  if (!session || session.user_id !== userId || session.status !== "active") {
-    return undefined;
-  }
+  return db.transaction(async (tx) => {
+    const [session] = await tx.select().from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .for("update")
+      .limit(1);
+    if (!session || session.userId !== userId || session.status !== "active") return undefined;
+    if (session.organization && session.organization !== organization) return undefined;
 
-  if (session.organization && session.organization !== organization) {
-    return undefined;
-  }
+    if (!session.organization) {
+      const [updated] = await tx.update(sessions)
+        .set({ organization, lastUpdate: new Date().toISOString() })
+        .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), eq(sessions.status, "active")))
+        .returning();
+      return updated ? mapSession(updated) : undefined;
+    }
 
-  if (!session.organization) {
-    await db.update(sessions).set({ organization, lastUpdate: new Date().toISOString() }).where(eq(sessions.id, sessionId));
-  }
-
-  return getSessionById(sessionId);
+    return mapSession(session);
+  });
 }
 
-export async function finalizeSession(sessionId: number): Promise<void> {
-  await db.update(sessions).set({ status: "finished", endTime: new Date().toISOString() }).where(eq(sessions.id, sessionId));
+export async function finalizeSession(sessionId: number, userId: number): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [session] = await tx.select().from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .for("update")
+      .limit(1);
+    if (!session || session.userId !== userId || session.status !== "active") return false;
+
+    await tx.update(sessions)
+      .set({ status: "finished", endTime: new Date().toISOString() })
+      .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), eq(sessions.status, "active")));
+    return true;
+  });
 }
 
-export async function updateSessionPing(sessionId: number): Promise<void> {
-  await db.update(sessions).set({ lastUpdate: new Date().toISOString() }).where(eq(sessions.id, sessionId));
+export async function updateSessionPing(sessionId: number, userId: number): Promise<boolean> {
+  const updated = await db.update(sessions)
+    .set({ lastUpdate: new Date().toISOString() })
+    .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId), eq(sessions.status, "active")))
+    .returning({ id: sessions.id });
+  return updated.length > 0;
 }
 
 export async function getSessionById(sessionId: number): Promise<DbSession | undefined> {
@@ -230,6 +285,7 @@ export async function getSessionById(sessionId: number): Promise<DbSession | und
 export interface AdminSession {
   id: number;
   username: string;
+  operator_user_id: number;
   organization: Organization | null;
   start_time: string;
   end_time: string | null;
@@ -246,7 +302,7 @@ export async function getAllSessions(filters: {
   organization?: Organization;
 } = {}): Promise<AdminSession[]> {
   const conditions = [];
-  if (filters.userId) conditions.push(eq(sessions.userId, filters.userId));
+  if (filters.userId) conditions.push(eq(sessions.operatorUserId, filters.userId));
   if (filters.status) conditions.push(eq(sessions.status, filters.status));
   if (filters.dateFrom) conditions.push(gte(sessions.startTime, filters.dateFrom));
   if (filters.dateTo) conditions.push(lte(sessions.startTime, `${filters.dateTo} 23:59:59`));
@@ -254,7 +310,8 @@ export async function getAllSessions(filters: {
 
   const rows = await db.select({
     id: sessions.id,
-    username: users.username,
+    username: sessions.operatorUsername,
+    operator_user_id: sessions.operatorUserId,
     organization: sessions.organization,
     start_time: sessions.startTime,
     end_time: sessions.endTime,
@@ -262,21 +319,21 @@ export async function getAllSessions(filters: {
     status: sessions.status,
     total_quantity: sql<number>`coalesce(sum(${counts.quantity}), 0)`,
   }).from(sessions)
-    .innerJoin(users, eq(users.id, sessions.userId))
     .leftJoin(counts, eq(counts.sessionId, sessions.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    .groupBy(sessions.id, users.username)
+    .groupBy(sessions.id)
     .orderBy(desc(sessions.startTime));
 
   return rows.map(row => ({ ...row, organization: row.organization as Organization | null, total_quantity: Number(row.total_quantity) }));
 }
 
-/* ── Count helpers ────────────────────────────────────────────────────────── */
-
-export async function upsertCount(sessionId: number, code: string, quantity: number): Promise<void> {
-  await db.insert(counts).values({ sessionId, code, quantity })
-    .onConflictDoUpdate({ target: [counts.sessionId, counts.code], set: { quantity: sql`excluded.quantity` } });
+export async function getSessionOperators(): Promise<{ id: number; username: string }[]> {
+  return db.selectDistinct({ id: sessions.operatorUserId, username: sessions.operatorUsername })
+    .from(sessions)
+    .orderBy(sessions.operatorUsername);
 }
+
+/* ── Count helpers ────────────────────────────────────────────────────────── */
 
 export type SessionWriteResult = "saved" | "not_found" | "forbidden" | "finished";
 
@@ -292,7 +349,8 @@ export function saveSessionCount(
   quantity: number,
 ): Promise<SessionWriteResult> {
   return db.transaction(async (tx) => {
-    const [session] = await tx.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const [session] = await tx.select().from(sessions)
+      .where(eq(sessions.id, sessionId)).for("update").limit(1);
     if (!session) return "not_found" as const;
     if (session.userId !== userId) return "forbidden" as const;
     if (session.status !== "active") return "finished" as const;
@@ -311,7 +369,8 @@ export function saveAndFinalizeSession(
   quantity: number,
 ): Promise<SessionWriteResult> {
   return db.transaction(async (tx) => {
-    const [session] = await tx.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const [session] = await tx.select().from(sessions)
+      .where(eq(sessions.id, sessionId)).for("update").limit(1);
     if (!session) return "not_found" as const;
     if (session.userId !== userId) return "forbidden" as const;
     if (session.status !== "active") return "finished" as const;

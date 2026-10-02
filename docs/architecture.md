@@ -88,11 +88,17 @@ Rotas administrativas usam `requireAdmin` e verificam o role `admin` presente na
 O schema PostgreSQL é definido em `lib/db/src/schema/index.ts`.
 
 - `users` — identidade, username, hash bcrypt e role.
-- `sessions` — usuário, organização, timestamps e status (`active` ou `finished`).
+- `sessions` — vínculo atual opcional com usuário, snapshots obrigatórios do operador (`operator_user_id`, `operator_username`), organização, timestamps e status (`active` ou `finished`). O snapshot não tem FK para `users`.
 - `counts` — código e quantidade por sessão, com unicidade por sessão e código.
 - `itens` — agregado legado de itens.
 
 A inicialização da camada de persistência executa limpeza de sessões/contagens com mais de 180 dias e pode criar usuários de bootstrap somente quando as variáveis de ambiente correspondentes estiverem configuradas. Usuários existentes não são alterados pelo bootstrap.
+
+### Remoção de usuários
+
+A remoção de uma conta finaliza as sessões ainda ativas e exclui o usuário na mesma transação. A FK `sessions.user_id` usa `ON DELETE SET NULL`; sessões, snapshots e counts permanecem vinculados entre si. A FK `counts.session_id` não usa cascade. O histórico administrativo identifica o operador pelo snapshot, independentemente da existência da conta.
+
+A retenção de 180 dias permanece aplicável às sessões e contagens. JWTs emitidos antes da remoção continuam válidos até expirarem; a revogação imediata não está implementada.
 
 ## Fluxo de sessões
 

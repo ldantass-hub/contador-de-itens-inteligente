@@ -110,7 +110,7 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
       return;
     }
 
-    await finalizeSession(existing.id);
+    await finalizeSession(existing.id, user.id);
   }
 
   res.json({ user: safeUser, needsResume: false });

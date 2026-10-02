@@ -104,7 +104,11 @@ router.put("/ping", async (req, res) => {
     res.status(404).json({ error: "Nenhuma sessão ativa." });
     return;
   }
-  await updateSessionPing(session.id);
+  const updated = await updateSessionPing(session.id, req.user!.userId);
+  if (!updated) {
+    res.status(404).json({ error: "Nenhuma sessão ativa." });
+    return;
+  }
   res.json({ ok: true });
 });
 
@@ -118,7 +122,11 @@ router.post("/encerrar", async (req, res) => {
     return;
   }
 
-  await finalizeSession(session.id);
+  const finalized = await finalizeSession(session.id, req.user!.userId);
+  if (!finalized) {
+    res.status(404).json({ error: "Nenhuma sessão ativa." });
+    return;
+  }
   res.json({ ok: true, sessionId: session.id });
 });
 

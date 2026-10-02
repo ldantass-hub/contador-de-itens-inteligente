@@ -222,7 +222,7 @@ export default function UserManagement() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remover usuário</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja remover este usuário? A conta {pendingRemoval?.username} será removida se não possuir sessões ou histórico vinculado.
+              Tem certeza que deseja remover este usuário? A conta {pendingRemoval?.username} será removida, as sessões ativas serão finalizadas e o histórico será preservado.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {removeError && <div className="admin-error" role="alert">{removeError}</div>}
