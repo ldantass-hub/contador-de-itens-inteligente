@@ -6,6 +6,7 @@
     "dev": "concurrently -k -n BACKEND,FRONTEND \"PORT=3000 pnpm --filter @workspace/api-server dev\" \"PORT=5173 BASE_PATH=/ pnpm --filter @workspace/barcode-processor dev\"",
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "test:unit": "vitest run",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },
@@ -13,6 +14,7 @@
   "devDependencies": {
     "concurrently": "^10.0.5",
     "prettier": "^3.8.1",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "vitest": "^5.0.3"
   }
 }
