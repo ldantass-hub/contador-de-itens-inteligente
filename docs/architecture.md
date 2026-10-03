@@ -37,7 +37,7 @@ Pacote compartilhado que exporta a conexão Drizzle/PostgreSQL e o schema das ta
 
 ### Saúde
 
-- `GET /api/health` — health check da API.
+- `GET /api/healthz` — health check da API.
 
 ### Autenticação
 
