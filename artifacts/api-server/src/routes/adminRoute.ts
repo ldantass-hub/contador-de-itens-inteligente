@@ -1,5 +1,6 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
+import { logger } from "../lib/logger.js";
 import { authenticate, requireAdmin } from "../middlewares/authenticate.js";
 import {
   getAllSessions,
@@ -12,6 +13,21 @@ import {
 } from "../lib/db.js";
 import { isOrganization, type Organization } from "../lib/organizations.js";
 import { parsePostgresId } from "../lib/inputValidation.js";
+
+function safeAdminError(error: unknown): unknown {
+  if (!(error instanceof Error)) return { type: typeof error };
+
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) return cause;
+  if (!("params" in error) && !("query" in error)) return error;
+
+  const code = "code" in error && typeof error.code === "string" ? error.code : undefined;
+  return {
+    type: error.constructor.name,
+    ...(code ? { code } : {}),
+    stack: error.stack?.split("\n").slice(1).join("\n"),
+  };
+}
 
 const router = Router();
 router.use(authenticate, requireAdmin);
@@ -52,6 +68,14 @@ router.post("/users", async (req, res) => {
 
   try {
     const id = await createUser(username, body.password, body.role);
+    logger.info({
+      event: "admin.user_create",
+      result: "success",
+      actorUserId: req.user!.userId,
+      targetUserId: id,
+      targetRole: body.role,
+      reqId: req.id,
+    }, "Admin user created");
     res.status(201).json({ user: { id, username, role: body.role } });
   } catch (error) {
     if (
@@ -60,9 +84,23 @@ router.post("/users", async (req, res) => {
       (("code" in error && error.code === "23505") ||
         ("cause" in error && typeof error.cause === "object" && error.cause !== null && "code" in error.cause && error.cause.code === "23505"))
     ) {
+      logger.warn({
+        event: "admin.user_create",
+        result: "failure",
+        reason: "username_conflict",
+        actorUserId: req.user!.userId,
+        reqId: req.id,
+      }, "Admin user creation rejected");
       res.status(409).json({ error: "Esse usuário já existe." });
       return;
     }
+    logger.error({
+      event: "admin.user_create",
+      result: "failure",
+      actorUserId: req.user!.userId,
+      reqId: req.id,
+      err: safeAdminError(error),
+    }, "Unexpected admin user creation error");
     res.status(500).json({ error: "Não foi possível criar o usuário." });
   }
 });
@@ -77,22 +115,61 @@ router.delete("/users/:userId", async (req, res) => {
   try {
     const result = await removeUser(userId, req.user!.userId);
     if (result === "not_found") {
+      logger.warn({
+        event: "admin.user_delete",
+        result: "failure",
+        reason: "target_not_found",
+        actorUserId: req.user!.userId,
+        targetUserId: userId,
+        reqId: req.id,
+      }, "Admin user deletion rejected");
       res.status(404).json({ error: "Usuário não encontrado." });
       return;
     }
     if (result === "self") {
+      logger.warn({
+        event: "admin.user_delete",
+        result: "failure",
+        reason: "self_delete",
+        actorUserId: req.user!.userId,
+        targetUserId: userId,
+        reqId: req.id,
+      }, "Admin user deletion rejected");
       res.status(409).json({ error: "Você não pode remover sua própria conta." });
       return;
     }
+    logger.info({
+      event: "admin.user_delete",
+      result: "success",
+      actorUserId: req.user!.userId,
+      targetUserId: userId,
+      reqId: req.id,
+    }, "Admin user deleted");
     res.json({ message: "Usuário removido com sucesso." });
   } catch (error) {
     const code = typeof error === "object" && error !== null && "code" in error
       ? error.code
       : undefined;
     if (code === "23503") {
+      logger.warn({
+        event: "admin.user_delete",
+        result: "failure",
+        reason: "referential_constraint",
+        actorUserId: req.user!.userId,
+        targetUserId: userId,
+        reqId: req.id,
+      }, "Admin user deletion rejected");
       res.status(409).json({ error: "Não foi possível remover o usuário por uma referência ainda existente." });
       return;
     }
+    logger.error({
+      event: "admin.user_delete",
+      result: "failure",
+      actorUserId: req.user!.userId,
+      targetUserId: userId,
+      reqId: req.id,
+      err: safeAdminError(error),
+    }, "Unexpected admin user deletion error");
     res.status(500).json({ error: "Não foi possível remover o usuário." });
   }
 });

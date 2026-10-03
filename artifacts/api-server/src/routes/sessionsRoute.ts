@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticate } from "../middlewares/authenticate.js";
+import { logger } from "../lib/logger.js";
 import {
   getActiveSession,
   createSession,
@@ -31,12 +32,30 @@ router.post("/select-organization", async (req, res) => {
 
   const selection = await selectOrganizationSession(req.user!.userId, organization);
   if (selection.kind === "conflict") {
+    logger.warn({
+      event: "session.start",
+      result: "failure",
+      reason: "organization_conflict",
+      actorUserId: req.user!.userId,
+      sessionId: selection.session.id,
+      reqId: req.id,
+    }, "Counting session start rejected");
     res.status(409).json({
       error: `A sessão ativa pertence à organização ${selection.session.organization}. Finalize-a antes de iniciar outra organização.`,
     });
     return;
   }
 
+  if (selection.created) {
+    logger.info({
+      event: "session.start",
+      result: "success",
+      actorUserId: req.user!.userId,
+      sessionId: selection.session.id,
+      organization: selection.session.organization,
+      reqId: req.id,
+    }, "Counting session started");
+  }
   res.json({ session: selection.session });
 });
 
@@ -80,6 +99,14 @@ router.post("/resume", async (req, res) => {
   }
 
   const session = await createSession(userId, (organization ?? null) as Organization | null);
+  logger.info({
+    event: "session.start",
+    result: "success",
+    actorUserId: userId,
+    sessionId: session.id,
+    organization: session.organization,
+    reqId: req.id,
+  }, "Counting session started");
   res.json({ session });
 });
 
@@ -127,6 +154,13 @@ router.post("/encerrar", async (req, res) => {
     res.status(404).json({ error: "Nenhuma sessão ativa." });
     return;
   }
+  logger.info({
+    event: "session.finish",
+    result: "success",
+    actorUserId: req.user!.userId,
+    sessionId: session.id,
+    reqId: req.id,
+  }, "Counting session finished");
   res.json({ ok: true, sessionId: session.id });
 });
 
@@ -225,6 +259,13 @@ router.post("/finalizar", async (req, res) => {
     });
     return;
   }
+  logger.info({
+    event: "session.finish",
+    result: "success",
+    actorUserId: req.user!.userId,
+    sessionId,
+    reqId: req.id,
+  }, "Counting session finished");
   if (Array.isArray(ignoredLogs) && ignoredLogs.length > 0) {
     appendIgnoredLog(ignoredLogs);
   }

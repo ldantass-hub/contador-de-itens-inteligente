@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import ExcelJS from "exceljs";
+import { logger } from "../lib/logger.js";
 import { authenticate } from "../middlewares/authenticate.js";
 import {
   appendIgnoredLog,
@@ -117,6 +118,13 @@ router.post("/finalizar", async (req, res) => {
     res.status(result === "forbidden" ? 403 : 400).json({ error: "Sessão inválida ou já finalizada." });
     return;
   }
+  logger.info({
+    event: "session.finish",
+    result: "success",
+    actorUserId: req.user!.userId,
+    sessionId: session.id,
+    reqId: req.id,
+  }, "Counting session finished");
   if (Array.isArray(ignoredLogs) && ignoredLogs.length > 0) {
     appendIgnoredLog(ignoredLogs);
   }

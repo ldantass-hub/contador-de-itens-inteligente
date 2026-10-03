@@ -1,7 +1,8 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { findUserByUsername, findUserById, getActiveSession, finalizeSession, updateUserPassword } from "../lib/db.js";
+import { logger } from "../lib/logger.js";
 import { signToken } from "../lib/jwtUtils.js";
 import { ACCESS_TOKEN_COOKIE, accessTokenCookieOptions } from "../lib/authCookie.js";
 import { authenticate } from "../middlewares/authenticate.js";
@@ -15,6 +16,26 @@ const LOGIN_USERNAME_MAX = 5;
 function normalizeUsernameForRateLimit(value: unknown): string {
   if (typeof value !== "string") return "";
   return value.trim().toLowerCase().slice(0, 100);
+}
+
+function logLoginFailure(req: Request, reason: string, userId?: number): void {
+  logger.warn({
+    event: "auth.login.failure",
+    result: "failure",
+    reason,
+    ...(userId === undefined ? {} : { userId }),
+    reqId: req.id,
+  }, "Login failed");
+}
+
+function logLoginSuccess(req: Request, userId: number, role: string): void {
+  logger.info({
+    event: "auth.login.success",
+    result: "success",
+    userId,
+    role,
+    reqId: req.id,
+  }, "Login succeeded");
 }
 
 /*
@@ -63,6 +84,7 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
   const { username, password } = req.body as { username?: string; password?: string };
 
   if (!username || typeof username !== "string" || !password || typeof password !== "string") {
+    logLoginFailure(req, "invalid_input");
     res.status(400).json({ error: "Usuário e senha são obrigatórios." });
     return;
   }
@@ -72,6 +94,7 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
   const cleanPass = password.slice(0, 200);
 
   if (!cleanUser || !cleanPass) {
+    logLoginFailure(req, "invalid_input");
     res.status(400).json({ error: "Usuário e senha são obrigatórios." });
     return;
   }
@@ -84,12 +107,14 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
      * ~100 ms just like a real compare.
      */
     await bcrypt.compare(cleanPass, "$2b$10$invalidhashpadding000000000000000000000000000000000000");
+    logLoginFailure(req, "invalid_credentials");
     res.status(401).json({ error: "Usuário ou senha inválidos." });
     return;
   }
 
   const match = await bcrypt.compare(cleanPass, user.password);
   if (!match) {
+    logLoginFailure(req, "invalid_credentials", user.id);
     res.status(401).json({ error: "Usuário ou senha inválidos." });
     return;
   }
@@ -106,13 +131,25 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
     const twoHoursMs  = 2 * 60 * 60 * 1000;
 
     if (ageMs < twoHoursMs) {
+      logLoginSuccess(req, user.id, user.role);
       res.json({ user: safeUser, activeSession: existing, needsResume: true });
       return;
     }
 
-    await finalizeSession(existing.id, user.id);
+    const finalized = await finalizeSession(existing.id, user.id);
+    if (finalized) {
+      logger.info({
+        event: "session.finish",
+        result: "success",
+        actorUserId: user.id,
+        sessionId: existing.id,
+        reason: "inactive_session_on_login",
+        reqId: req.id,
+      }, "Counting session finished");
+    }
   }
 
+  logLoginSuccess(req, user.id, user.role);
   res.json({ user: safeUser, needsResume: false });
 });
 
@@ -124,13 +161,28 @@ router.get("/me", authenticate, (req, res) => {
 });
 
 /* ── POST /api/auth/logout ────────────────────────────────────────────────── */
-router.post("/logout", (_req, res) => {
+router.post("/logout", (req, res) => {
   res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenCookieOptions);
+  logger.info({
+    event: "auth.logout",
+    result: "success",
+    reqId: req.id,
+  }, "Logout completed");
   res.json({ message: "Logout realizado com sucesso." });
 });
 
 /* ── PUT /api/auth/password ──────────────────────────────────────────────── */
 router.put("/password", authenticate, async (req, res) => {
+  const logPasswordChange = (result: "success" | "failure", reason?: string): void => {
+    logger[result === "success" ? "info" : "warn"]({
+      event: "auth.password_change",
+      result,
+      ...(reason ? { reason } : {}),
+      actorUserId: req.user!.userId,
+      reqId: req.id,
+    }, "Password change");
+  };
+
   const body = (req.body ?? {}) as {
     currentPassword?: unknown;
     newPassword?: unknown;
@@ -145,27 +197,32 @@ router.put("/password", authenticate, async (req, res) => {
     !body.newPassword ||
     !body.confirmPassword
   ) {
+    logPasswordChange("failure", "invalid_input");
     res.status(400).json({ error: "Preencha todos os campos de senha." });
     return;
   }
 
   if (body.currentPassword.length > 200 || body.newPassword.length > 200 || body.confirmPassword.length > 200) {
+    logPasswordChange("failure", "password_too_long");
     res.status(400).json({ error: "A senha excede o limite permitido." });
     return;
   }
 
   if (body.newPassword.length < 12) {
+    logPasswordChange("failure", "password_policy");
     res.status(400).json({ error: "A nova senha deve ter no mínimo 12 caracteres." });
     return;
   }
 
   if (body.newPassword !== body.confirmPassword) {
+    logPasswordChange("failure", "confirmation_mismatch");
     res.status(400).json({ error: "A confirmação da nova senha não confere." });
     return;
   }
 
   const user = await findUserById(req.user!.userId);
   if (!user || !(await bcrypt.compare(body.currentPassword, user.password))) {
+    logPasswordChange("failure", "current_password_mismatch");
     res.status(400).json({ error: "Não foi possível alterar a senha informada." });
     return;
   }
@@ -173,10 +230,12 @@ router.put("/password", authenticate, async (req, res) => {
   const passwordHash = await bcrypt.hash(body.newPassword, 10);
   const updated = await updateUserPassword(req.user!.userId, passwordHash);
   if (!updated) {
+    logPasswordChange("failure", "update_failed");
     res.status(400).json({ error: "Não foi possível alterar a senha informada." });
     return;
   }
 
+  logPasswordChange("success");
   res.json({ message: "Senha alterada com sucesso." });
 });
 

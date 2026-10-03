@@ -179,7 +179,7 @@ export async function createSession(userId: number, organization: Organization |
 }
 
 export type OrganizationSelectionResult =
-  | { kind: "selected"; session: DbSession }
+  | { kind: "selected"; session: DbSession; created: boolean }
   | { kind: "conflict"; session: DbSession };
 
 /**
@@ -213,10 +213,10 @@ export async function selectOrganizationSession(
           .set({ organization, lastUpdate: new Date().toISOString() })
           .where(and(eq(sessions.id, existing.id), eq(sessions.status, "active")))
           .returning();
-        return { kind: "selected", session: mapSession(updated) } as const;
+        return { kind: "selected", session: mapSession(updated), created: false } as const;
       }
 
-      return { kind: "selected", session: mappedExisting } as const;
+      return { kind: "selected", session: mappedExisting, created: false } as const;
     }
 
     const [created] = await tx.insert(sessions).values({
@@ -225,7 +225,7 @@ export async function selectOrganizationSession(
       operatorUsername: operator.username,
       organization,
     }).returning();
-    return { kind: "selected", session: mapSession(created) } as const;
+    return { kind: "selected", session: mapSession(created), created: true } as const;
   });
 }
 
