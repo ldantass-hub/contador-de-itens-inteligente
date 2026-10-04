@@ -3,6 +3,6 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["artifacts/barcode-processor/src/**/*.test.ts"],
+    include: ["artifacts/**/*.test.ts", "artifacts/**/*.test.tsx"],
   },
 });

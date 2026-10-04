@@ -52,6 +52,14 @@ export interface DbUser {
   username: string;
   password: string;
   role: string;
+  authVersion: number;
+}
+
+export interface AuthenticatedDbUser {
+  id: number;
+  username: string;
+  role: string;
+  authVersion: number;
 }
 
 export interface DbSession {
@@ -77,12 +85,34 @@ export interface DbCount {
 
 export async function findUserByUsername(username: string): Promise<DbUser | undefined> {
   const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
-  return user ? { id: user.id, username: user.username, password: user.password, role: user.role } : undefined;
+  return user ? {
+    id: user.id,
+    username: user.username,
+    password: user.password,
+    role: user.role,
+    authVersion: user.authVersion,
+  } : undefined;
 }
 
 export async function findUserById(id: number): Promise<DbUser | undefined> {
   const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
-  return user ? { id: user.id, username: user.username, password: user.password, role: user.role } : undefined;
+  return user ? {
+    id: user.id,
+    username: user.username,
+    password: user.password,
+    role: user.role,
+    authVersion: user.authVersion,
+  } : undefined;
+}
+
+export async function getAuthUserById(id: number): Promise<AuthenticatedDbUser | undefined> {
+  const [user] = await db.select({
+    id: users.id,
+    username: users.username,
+    role: users.role,
+    authVersion: users.authVersion,
+  }).from(users).where(eq(users.id, id)).limit(1);
+  return user;
 }
 
 export async function getAllUsers(): Promise<Pick<DbUser, "id" | "username" | "role">[]> {
@@ -108,6 +138,10 @@ export async function removeUser(userId: number, actingUserId: number): Promise<
       .limit(1);
     if (!target) return "not_found";
 
+    await tx.update(users)
+      .set({ authVersion: sql`${users.authVersion} + 1` })
+      .where(eq(users.id, userId));
+
     const userSessions = await tx.select({ id: sessions.id })
       .from(sessions)
       .where(eq(sessions.userId, userId))
@@ -127,8 +161,32 @@ export async function removeUser(userId: number, actingUserId: number): Promise<
 
 export async function updateUserPassword(userId: number, passwordHash: string): Promise<boolean> {
   const result = await db.update(users)
-    .set({ password: passwordHash })
+    .set({ password: passwordHash, authVersion: sql`${users.authVersion} + 1` })
     .where(eq(users.id, userId))
+    .returning({ id: users.id });
+  return result.length > 0;
+}
+
+export async function updateUserRole(
+  userId: number,
+  role: "user" | "admin",
+): Promise<Pick<AuthenticatedDbUser, "id" | "username" | "role" | "authVersion"> | undefined> {
+  const [user] = await db.update(users)
+    .set({ role, authVersion: sql`${users.authVersion} + 1` })
+    .where(eq(users.id, userId))
+    .returning({
+      id: users.id,
+      username: users.username,
+      role: users.role,
+      authVersion: users.authVersion,
+    });
+  return user;
+}
+
+export async function revokeAuthVersion(userId: number, expectedVersion: number): Promise<boolean> {
+  const result = await db.update(users)
+    .set({ authVersion: sql`${users.authVersion} + 1` })
+    .where(and(eq(users.id, userId), eq(users.authVersion, expectedVersion)))
     .returning({ id: users.id });
   return result.length > 0;
 }

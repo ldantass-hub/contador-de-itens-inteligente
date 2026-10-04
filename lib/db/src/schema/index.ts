@@ -4,6 +4,7 @@ import {
   pgTable,
   text,
   timestamp,
+  check,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -15,9 +16,11 @@ export const users = pgTable(
     username: text("username").notNull().unique(),
     password: text("password").notNull(),
     role: text("role").notNull().default("user"),
+    authVersion: integer("auth_version").notNull().default(1),
   },
   (table) => [
     uniqueIndex("users_username_nocase").on(sql`lower(${table.username})`),
+    check("users_auth_version_positive", sql`${table.authVersion} >= 1`),
   ],
 );
 

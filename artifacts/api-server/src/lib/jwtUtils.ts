@@ -30,6 +30,7 @@ export interface JwtPayload {
   userId:   number;
   username: string;
   role:     string;
+  authVersion: number;
 }
 
 export function signToken(payload: JwtPayload): string {
@@ -38,7 +39,20 @@ export function signToken(payload: JwtPayload): string {
 
 export function verifyToken(token: string): JwtPayload | null {
   try {
-    return jwt.verify(token, SECRET) as JwtPayload;
+    const payload = jwt.verify(token, SECRET);
+    if (
+      typeof payload !== "object" ||
+      payload === null ||
+      !Number.isSafeInteger(payload.userId) ||
+      payload.userId <= 0 ||
+      typeof payload.username !== "string" ||
+      typeof payload.role !== "string" ||
+      !Number.isSafeInteger(payload.authVersion) ||
+      payload.authVersion < 1
+    ) {
+      return null;
+    }
+    return payload as JwtPayload;
   } catch {
     return null;
   }

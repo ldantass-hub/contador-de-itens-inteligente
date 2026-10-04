@@ -10,6 +10,7 @@ import {
   getSessionOperators,
   createUser,
   removeUser,
+  updateUserRole,
 } from "../lib/db.js";
 import { isOrganization, type Organization } from "../lib/organizations.js";
 import { parsePostgresId } from "../lib/inputValidation.js";
@@ -172,6 +173,40 @@ router.delete("/users/:userId", async (req, res) => {
     }, "Unexpected admin user deletion error");
     res.status(500).json({ error: "Não foi possível remover o usuário." });
   }
+});
+
+router.patch("/users/:userId/role", async (req, res) => {
+  const userId = parsePostgresId(req.params.userId);
+  if (userId === null) {
+    res.status(400).json({ error: "ID de usuário inválido." });
+    return;
+  }
+
+  const role = (req.body as { role?: unknown } | undefined)?.role;
+  if (role !== "user" && role !== "admin") {
+    res.status(400).json({ error: "O perfil deve ser 'user' ou 'admin'." });
+    return;
+  }
+  if (userId === req.user!.userId) {
+    res.status(409).json({ error: "Você não pode alterar o próprio perfil." });
+    return;
+  }
+
+  const user = await updateUserRole(userId, role);
+  if (!user) {
+    res.status(404).json({ error: "Usuário não encontrado." });
+    return;
+  }
+
+  logger.info({
+    event: "admin.user_role_change",
+    result: "success",
+    actorUserId: req.user!.userId,
+    targetUserId: user.id,
+    targetRole: user.role,
+    reqId: req.id,
+  }, "Admin user role changed");
+  res.json({ user: { id: user.id, username: user.username, role: user.role } });
 });
 
 /* ── GET /api/admin/sessions ────────────────────────────────────────────────

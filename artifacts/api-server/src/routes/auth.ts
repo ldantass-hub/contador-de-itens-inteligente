@@ -1,10 +1,11 @@
 import { Router, type Request } from "express";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
-import { findUserByUsername, findUserById, getActiveSession, finalizeSession, updateUserPassword } from "../lib/db.js";
+import { findUserByUsername, findUserById, getActiveSession, finalizeSession, revokeAuthVersion, updateUserPassword } from "../lib/db.js";
 import { logger } from "../lib/logger.js";
 import { signToken } from "../lib/jwtUtils.js";
 import { ACCESS_TOKEN_COOKIE, accessTokenCookieOptions } from "../lib/authCookie.js";
+import { verifyToken } from "../lib/jwtUtils.js";
 import { authenticate } from "../middlewares/authenticate.js";
 
 const router = Router();
@@ -119,7 +120,12 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
     return;
   }
 
-  const token    = signToken({ userId: user.id, username: user.username, role: user.role });
+  const token    = signToken({
+    userId: user.id,
+    username: user.username,
+    role: user.role,
+    authVersion: user.authVersion,
+  });
   const safeUser = { id: user.id, username: user.username, role: user.role };
   res.cookie(ACCESS_TOKEN_COOKIE, token, accessTokenCookieOptions);
 
@@ -161,8 +167,15 @@ router.get("/me", authenticate, (req, res) => {
 });
 
 /* ── POST /api/auth/logout ────────────────────────────────────────────────── */
-router.post("/logout", (req, res) => {
-  res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenCookieOptions);
+router.post("/logout", async (req, res) => {
+  try {
+    const payload = req.cookies?.[ACCESS_TOKEN_COOKIE]
+      ? verifyToken(req.cookies[ACCESS_TOKEN_COOKIE])
+      : null;
+    if (payload) await revokeAuthVersion(payload.userId, payload.authVersion);
+  } finally {
+    res.clearCookie(ACCESS_TOKEN_COOKIE, accessTokenCookieOptions);
+  }
   logger.info({
     event: "auth.logout",
     result: "success",
