@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://contador-de-itens-inteligente.onrender.com/api/:path*"
+    }
+  ]
+}
