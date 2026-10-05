@@ -11,12 +11,18 @@ import {
   saveAndFinalizeSession,
 } from "../lib/db.js";
 import { parsePostgresQuantity } from "../lib/inputValidation.js";
+import { preflightXlsx, XlsxPreflightError } from "../lib/xlsxPreflight.js";
 
 const router = Router();
 router.use(authenticate);
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, /* 5 MB cap — prevent memory exhaustion */
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
+    fields: 0,
+    parts: 1,
+  },
 });
 const XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -162,6 +168,7 @@ router.post("/upload", upload.single("planilha"), async (req, res) => {
     return;
   }
   try {
+    await preflightXlsx(req.file.buffer);
     const wb = new ExcelJS.Workbook();
      const workbookBuffer = req.file.buffer as unknown as Parameters<typeof wb.xlsx.load>[0];
     await wb.xlsx.load(workbookBuffer);
@@ -191,6 +198,14 @@ router.post("/upload", upload.single("planilha"), async (req, res) => {
 
     res.json({ ok: true, rows: store.size });
   } catch (error) {
+    if (error instanceof XlsxPreflightError) {
+      res.status(error.statusCode).json({
+        error: error.statusCode === 413
+          ? "Planilha excede os limites permitidos."
+          : "Planilha inválida ou corrompida.",
+      });
+      return;
+    }
     if (isWorkbookFormatError(error)) {
       res.status(400).json({ error: "Planilha inválida ou corrompida." });
       return;

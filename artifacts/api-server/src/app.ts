@@ -6,6 +6,7 @@ import pinoHttp from "pino-http";
 import { logger } from "./lib/logger.js";
 import { isTrustedOrigin } from "./lib/trustedOrigins.js";
 import { requireTrustedOrigin } from "./middlewares/requireTrustedOrigin.js";
+import { handleMulterError } from "./middlewares/handleMulterError.js";
 import router from "./routes/index.js";
 
 const app: Express = express();
@@ -91,6 +92,8 @@ app.use("/api", generalLimiter, router);
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: "Recurso não encontrado." });
 });
+
+app.use(handleMulterError);
 
 /* ── Global error handler ───────────────────────────────────────────────────
    Express calls this when next(err) is invoked or a sync route throws.
