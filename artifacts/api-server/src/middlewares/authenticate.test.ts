@@ -74,6 +74,7 @@ describe("authenticate", () => {
       username: user.username,
       role: user.role,
       authVersion: user.authVersion,
+      mustChangePassword: false,
     });
     const req = createRequest(signToken(user));
     const res = createResponse();
@@ -81,9 +82,37 @@ describe("authenticate", () => {
 
     await authenticate(req, res, next);
 
-    expect(req.user).toEqual(user);
+    expect(req.user).toEqual({ ...user, mustChangePassword: false });
     expect(next).toHaveBeenCalledOnce();
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("rejects protected routes for users who must change their password", async () => {
+    const { signToken } = await import("../lib/jwtUtils.js");
+    const { authenticate } = await import("./authenticate.js");
+    vi.mocked(getAuthUserById).mockResolvedValue({
+      id: 17,
+      username: "operator",
+      role: "user",
+      authVersion: 1,
+      mustChangePassword: true,
+    });
+    const req = createRequest(signToken({
+      userId: 17,
+      username: "operator",
+      role: "user",
+      authVersion: 1,
+    }));
+    req.originalUrl = "/api/auth/me";
+    req.path = "/me";
+    const res = createResponse();
+    const next = createNext();
+
+    await authenticate(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ error: "Você deve alterar sua senha antes de continuar." });
+    expect(next).not.toHaveBeenCalled();
   });
 
   it.each([

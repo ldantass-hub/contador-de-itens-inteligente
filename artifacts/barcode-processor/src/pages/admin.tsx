@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/authContext";
+import { ORGANIZATIONS } from "@/lib/organizations";
 
 interface AdminSession {
   id: number;
@@ -168,11 +169,9 @@ export default function Admin() {
               <label>Organização</label>
               <select value={filterOrganization} onChange={e => setFilterOrganization(e.target.value)}>
                 <option value="">Todas</option>
-                <option value="PC">PC</option>
-                <option value="TV">TV</option>
-                <option value="MEDIA">MEDIA</option>
-                <option value="ARCON">ARCON</option>
-                <option value="MWO">MWO</option>
+                {ORGANIZATIONS.map(organization => (
+                  <option key={organization} value={organization}>{organization}</option>
+                ))}
               </select>
             </div>
             <div className="filter-group">

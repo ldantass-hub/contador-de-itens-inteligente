@@ -126,7 +126,12 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
     role: user.role,
     authVersion: user.authVersion,
   });
-  const safeUser = { id: user.id, username: user.username, role: user.role };
+  const safeUser = {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    mustChangePassword: user.mustChangePassword,
+  };
   res.cookie(ACCESS_TOKEN_COOKIE, token, accessTokenCookieOptions);
 
   /* Check for existing active session */
@@ -138,7 +143,7 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
 
     if (ageMs < twoHoursMs) {
       logLoginSuccess(req, user.id, user.role);
-      res.json({ user: safeUser, activeSession: existing, needsResume: true });
+      res.json({ user: safeUser, activeSession: existing, needsResume: true, mustChangePassword: user.mustChangePassword });
       return;
     }
 
@@ -156,7 +161,7 @@ router.post("/login", loginIpLimiter, loginUsernameLimiter, async (req, res) => 
   }
 
   logLoginSuccess(req, user.id, user.role);
-  res.json({ user: safeUser, needsResume: false });
+  res.json({ user: safeUser, needsResume: false, mustChangePassword: user.mustChangePassword });
 });
 
 /* ── GET /api/auth/me ───────────────────────────────────────────────────────

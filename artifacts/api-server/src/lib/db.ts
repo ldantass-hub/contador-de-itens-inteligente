@@ -53,6 +53,7 @@ export interface DbUser {
   password: string;
   role: string;
   authVersion: number;
+  mustChangePassword: boolean;
 }
 
 export interface AuthenticatedDbUser {
@@ -60,6 +61,7 @@ export interface AuthenticatedDbUser {
   username: string;
   role: string;
   authVersion: number;
+  mustChangePassword: boolean;
 }
 
 export interface DbSession {
@@ -67,7 +69,7 @@ export interface DbSession {
   user_id: number | null;
   operator_user_id: number;
   operator_username: string;
-  organization: Organization | null;
+  organization: string | null;
   start_time: string;
   end_time: string | null;
   last_update: string;
@@ -91,6 +93,7 @@ export async function findUserByUsername(username: string): Promise<DbUser | und
     password: user.password,
     role: user.role,
     authVersion: user.authVersion,
+    mustChangePassword: user.mustChangePassword,
   } : undefined;
 }
 
@@ -102,6 +105,7 @@ export async function findUserById(id: number): Promise<DbUser | undefined> {
     password: user.password,
     role: user.role,
     authVersion: user.authVersion,
+    mustChangePassword: user.mustChangePassword,
   } : undefined;
 }
 
@@ -111,6 +115,7 @@ export async function getAuthUserById(id: number): Promise<AuthenticatedDbUser |
     username: users.username,
     role: users.role,
     authVersion: users.authVersion,
+    mustChangePassword: users.mustChangePassword,
   }).from(users).where(eq(users.id, id)).limit(1);
   return user;
 }
@@ -121,7 +126,7 @@ export async function getAllUsers(): Promise<Pick<DbUser, "id" | "username" | "r
 
 export async function createUser(username: string, password: string, role: "user" | "admin"): Promise<number> {
   const hash = await bcrypt.hash(password, 10);
-  const [user] = await db.insert(users).values({ username, password: hash, role }).returning({ id: users.id });
+  const [user] = await db.insert(users).values({ username, password: hash, role, mustChangePassword: false }).returning({ id: users.id });
   return user.id;
 }
 
@@ -161,7 +166,11 @@ export async function removeUser(userId: number, actingUserId: number): Promise<
 
 export async function updateUserPassword(userId: number, passwordHash: string): Promise<boolean> {
   const result = await db.update(users)
-    .set({ password: passwordHash, authVersion: sql`${users.authVersion} + 1` })
+    .set({
+      password: passwordHash,
+      authVersion: sql`${users.authVersion} + 1`,
+      mustChangePassword: false,
+    })
     .where(eq(users.id, userId))
     .returning({ id: users.id });
   return result.length > 0;
@@ -170,7 +179,7 @@ export async function updateUserPassword(userId: number, passwordHash: string): 
 export async function updateUserRole(
   userId: number,
   role: "user" | "admin",
-): Promise<Pick<AuthenticatedDbUser, "id" | "username" | "role" | "authVersion"> | undefined> {
+): Promise<Pick<AuthenticatedDbUser, "id" | "username" | "role" | "authVersion" | "mustChangePassword"> | undefined> {
   const [user] = await db.update(users)
     .set({ role, authVersion: sql`${users.authVersion} + 1` })
     .where(eq(users.id, userId))
@@ -179,6 +188,7 @@ export async function updateUserRole(
       username: users.username,
       role: users.role,
       authVersion: users.authVersion,
+      mustChangePassword: users.mustChangePassword,
     });
   return user;
 }
@@ -202,7 +212,7 @@ function mapSession(session: typeof sessions.$inferSelect): DbSession {
     user_id: session.userId,
     operator_user_id: session.operatorUserId,
     operator_username: session.operatorUsername,
-    organization: session.organization as Organization | null,
+    organization: session.organization,
     start_time: toIsoTimestamp(session.startTime)!,
     end_time: toIsoTimestamp(session.endTime),
     last_update: toIsoTimestamp(session.lastUpdate)!,
@@ -344,7 +354,7 @@ export interface AdminSession {
   id: number;
   username: string;
   operator_user_id: number;
-  organization: Organization | null;
+  organization: string | null;
   start_time: string;
   end_time: string | null;
   last_update: string;
@@ -357,7 +367,7 @@ export async function getAllSessions(filters: {
   status?: string;
   dateFrom?: string;
   dateTo?: string;
-  organization?: Organization;
+  organization?: string;
 } = {}): Promise<AdminSession[]> {
   const conditions = [];
   if (filters.userId) conditions.push(eq(sessions.operatorUserId, filters.userId));
@@ -382,7 +392,7 @@ export async function getAllSessions(filters: {
     .groupBy(sessions.id)
     .orderBy(desc(sessions.startTime));
 
-  return rows.map(row => ({ ...row, organization: row.organization as Organization | null, total_quantity: Number(row.total_quantity) }));
+  return rows.map(row => ({ ...row, total_quantity: Number(row.total_quantity) }));
 }
 
 export async function getSessionOperators(): Promise<{ id: number; username: string }[]> {

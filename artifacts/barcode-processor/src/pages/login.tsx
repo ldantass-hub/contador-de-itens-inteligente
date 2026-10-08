@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth, type AuthUser, type AuthSession } from "@/lib/authContext";
+import { ORGANIZATIONS, isHistoricalOrganization, type Organization } from "@/lib/organizations";
 
 interface LoginResponse {
   user: AuthUser;
@@ -8,9 +9,6 @@ interface LoginResponse {
   activeSession?: AuthSession;
   needsResume: boolean;
 }
-
-const ORGANIZATIONS = ["PC", "TV", "MEDIA", "ARCON", "MWO"] as const;
-type Organization = (typeof ORGANIZATIONS)[number];
 
 export default function Login() {
   const { setAuth } = useAuth();
@@ -24,6 +22,10 @@ export default function Login() {
 
   const [pendingLogin, setPendingLogin] = useState<LoginResponse | null>(null);
   const [selectedOrganization, setSelectedOrganization] = useState<Organization | "">("");
+  const historicalActiveSession = pendingLogin?.activeSession &&
+    isHistoricalOrganization(pendingLogin.activeSession.organization)
+    ? pendingLogin.activeSession
+    : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -67,6 +69,12 @@ export default function Login() {
   async function handleOrganizationContinue(e: React.FormEvent) {
     e.preventDefault();
     if (!pendingLogin) return;
+
+    if (historicalActiveSession) {
+      setAuth(pendingLogin.user, historicalActiveSession);
+      navigate("/");
+      return;
+    }
 
     if (!selectedOrganization) {
       setError("Selecione uma organização para continuar.");
@@ -189,39 +197,46 @@ export default function Login() {
         ) : (
           <form className="login-form organization-form" onSubmit={handleOrganizationContinue}>
             <h2 className="modal-title">Qual Organização você deseja inventariar?</h2>
-            {pendingLogin.activeSession?.organization && (
+            {historicalActiveSession ? (
+              <p className="modal-body">
+                A sessão ativa pertence à organização histórica{" "}
+                <strong>{historicalActiveSession.organization}</strong>. Ela será retomada sem alterar o registro.
+              </p>
+            ) : pendingLogin.activeSession?.organization ? (
               <p className="modal-body">
                 A sessão ativa pertence à organização{" "}
                 <strong>{pendingLogin.activeSession.organization}</strong>.
                 Para mudar de organização, finalize a sessão atual antes de iniciar outra.
               </p>
+            ) : null}
+            {!historicalActiveSession && (
+              <div className="organization-options" role="radiogroup" aria-label="Organização">
+                {ORGANIZATIONS.map(organization => {
+                  const locked =
+                    Boolean(pendingLogin.activeSession?.organization) &&
+                    pendingLogin.activeSession?.organization !== organization;
+                  return (
+                    <label
+                      key={organization}
+                      className={`organization-option${selectedOrganization === organization ? " selected" : ""}${locked ? " disabled" : ""}`}
+                    >
+                      <input
+                        type="radio"
+                        name="organization"
+                        value={organization}
+                        checked={selectedOrganization === organization}
+                        disabled={loading || locked}
+                        onChange={() => {
+                          setSelectedOrganization(organization);
+                          setError("");
+                        }}
+                      />
+                      <span>{organization}</span>
+                    </label>
+                  );
+                })}
+              </div>
             )}
-            <div className="organization-options" role="radiogroup" aria-label="Organização">
-              {ORGANIZATIONS.map(organization => {
-                const locked =
-                  Boolean(pendingLogin.activeSession?.organization) &&
-                  pendingLogin.activeSession?.organization !== organization;
-                return (
-                  <label
-                    key={organization}
-                    className={`organization-option${selectedOrganization === organization ? " selected" : ""}${locked ? " disabled" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name="organization"
-                      value={organization}
-                      checked={selectedOrganization === organization}
-                      disabled={loading || locked}
-                      onChange={() => {
-                        setSelectedOrganization(organization);
-                        setError("");
-                      }}
-                    />
-                    <span>{organization}</span>
-                  </label>
-                );
-              })}
-            </div>
 
             {error && <div className="login-error">{error}</div>}
 
@@ -230,7 +245,7 @@ export default function Login() {
               className="app-btn app-btn-primary login-submit"
               disabled={loading}
             >
-              {loading ? "Configurando..." : "Continuar"}
+              {loading ? "Configurando..." : historicalActiveSession ? "Retomar sessão histórica" : "Continuar"}
             </button>
           </form>
         )}

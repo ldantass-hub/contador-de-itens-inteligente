@@ -31,6 +31,7 @@ export interface JwtPayload {
   username: string;
   role:     string;
   authVersion: number;
+  mustChangePassword?: boolean;
 }
 
 export function signToken(payload: JwtPayload): string {

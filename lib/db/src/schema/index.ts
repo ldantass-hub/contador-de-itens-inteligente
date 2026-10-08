@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   pgTable,
@@ -17,6 +18,7 @@ export const users = pgTable(
     password: text("password").notNull(),
     role: text("role").notNull().default("user"),
     authVersion: integer("auth_version").notNull().default(1),
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
   },
   (table) => [
     uniqueIndex("users_username_nocase").on(sql`lower(${table.username})`),

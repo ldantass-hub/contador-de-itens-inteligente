@@ -4,7 +4,7 @@ import express from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
-  users: new Map<number, { id: number; username: string; password: string; role: string; authVersion: number }>(),
+  users: new Map<number, { id: number; username: string; password: string; role: string; authVersion: number; mustChangePassword: boolean }>(),
   getAuthUserById: vi.fn(),
   findUserByUsername: vi.fn(),
   findUserById: vi.fn(),
@@ -35,8 +35,9 @@ function addUser(
   role: string,
   password: string,
   authVersion = 1,
+  mustChangePassword = false,
 ) {
-  const user = { id, username, role, password, authVersion };
+  const user = { id, username, role, password, authVersion, mustChangePassword };
   state.users.set(id, user);
   return user;
 }
@@ -113,7 +114,13 @@ describe("auth-version revocation flows", () => {
 
     state.getAuthUserById.mockImplementation(async (id: number) => {
       const user = state.users.get(id);
-      return user && { id: user.id, username: user.username, role: user.role, authVersion: user.authVersion };
+      return user && {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        authVersion: user.authVersion,
+        mustChangePassword: user.mustChangePassword,
+      };
     });
     state.findUserById.mockImplementation(async (id: number) => state.users.get(id));
     state.getActiveSession.mockResolvedValue(undefined);
@@ -151,6 +158,26 @@ describe("auth-version revocation flows", () => {
       server.close((error) => error ? reject(error) : resolve());
     });
     vi.unstubAllEnvs();
+  });
+
+  it("reports a temporary password requirement on login and blocks protected routes until reset", async () => {
+    const user = addUser(9, "temp-user", "user", await bcrypt.hash("temporary-pass", 4), 1, true);
+    state.findUserByUsername.mockImplementation(async (username: string) =>
+      username === user.username ? { ...user } : undefined,
+    );
+
+    const login = await send("/api/auth/login", {
+      method: "POST",
+      body: { username: "temp-user", password: "temporary-pass" },
+    });
+    const payload = await login.json();
+    const token = tokenFor(user);
+    const protectedRoute = await send("/api/auth/me", { token });
+
+    expect(login.status).toBe(200);
+    expect(payload.mustChangePassword).toBe(true);
+    expect(protectedRoute.status).toBe(403);
+    expect(await protectedRoute.json()).toEqual({ error: "Você deve alterar sua senha antes de continuar." });
   });
 
   it("invalidates a token after the password-change route succeeds", async () => {

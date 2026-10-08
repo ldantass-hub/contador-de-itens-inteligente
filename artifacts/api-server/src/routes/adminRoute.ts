@@ -12,7 +12,7 @@ import {
   removeUser,
   updateUserRole,
 } from "../lib/db.js";
-import { isOrganization, type Organization } from "../lib/organizations.js";
+import { isHistoricalOrganization, isOrganization } from "../lib/organizations.js";
 import { parsePostgresId } from "../lib/inputValidation.js";
 
 function safeAdminError(error: unknown): unknown {
@@ -229,7 +229,7 @@ router.get("/sessions", async (req, res) => {
     return;
   }
 
-  if (organization && !isOrganization(organization)) {
+  if (organization && !isOrganization(organization) && !isHistoricalOrganization(organization)) {
     res.status(400).json({ error: "Parâmetro 'organization' inválido." });
     return;
   }
@@ -250,7 +250,7 @@ router.get("/sessions", async (req, res) => {
     status:   status   || undefined,
     dateFrom: dateFrom || undefined,
     dateTo:   dateTo   || undefined,
-    organization: organization as Organization | undefined,
+    organization: organization || undefined,
   });
   res.json(sessions);
 });

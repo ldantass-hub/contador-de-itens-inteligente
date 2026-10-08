@@ -861,7 +861,29 @@
   max-width: 180px;
 }
 
-.scan-item-right { text-align: right; flex-shrink: 0; }
+.scan-item-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.scan-item-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--nd-destructive);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.scan-item-remove:hover { text-decoration: underline; }
 
 .item-qty-label {
   font-size: 0.65rem;

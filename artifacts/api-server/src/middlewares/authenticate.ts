@@ -6,7 +6,7 @@ import { getAuthUserById } from "../lib/db.js";
 declare global {
   namespace Express {
     interface Request {
-      user?: JwtPayload;
+      user?: JwtPayload & { mustChangePassword?: boolean };
     }
   }
 }
@@ -31,11 +31,23 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     return;
   }
 
+  const originalUrl = req.originalUrl ?? req.url ?? "";
+  const isPasswordResetRoute =
+    originalUrl === "/api/auth/password" ||
+    req.path === "/password" ||
+    originalUrl.endsWith("/api/auth/password");
+
+  if (user.mustChangePassword && !isPasswordResetRoute) {
+    res.status(403).json({ error: "Você deve alterar sua senha antes de continuar." });
+    return;
+  }
+
   req.user = {
     userId: user.id,
     username: user.username,
     role: user.role,
     authVersion: user.authVersion,
+    mustChangePassword: user.mustChangePassword,
   };
   next();
 }

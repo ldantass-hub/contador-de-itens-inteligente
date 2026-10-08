@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
+import { Trash2 } from "lucide-react";
 import { processInput, type ProcessResult } from "@/lib/barcodeProcessor";
 import { useAuth } from "@/lib/authContext";
+import { removeScanEntry } from "@/lib/scanEntryRemoval";
 
 const API = "/api/estoque";
 const SESSIONS_API = "/api/sessions";
@@ -48,8 +50,41 @@ function parseLogEntry(log: string): { code: string | null; quantity: number | n
   };
 }
 
+let errorAudioContext: AudioContext | null = null;
+
+function playErrorAlert() {
+  if (typeof window === "undefined" || typeof window.AudioContext !== "function") return;
+
+  try {
+    const context = errorAudioContext ?? (errorAudioContext = new window.AudioContext());
+    const playTone = () => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const startTime = context.currentTime;
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, startTime);
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.15, startTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.13);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startTime);
+      oscillator.stop(startTime + 0.14);
+    };
+
+    if (context.state === "suspended") {
+      void context.resume().then(playTone, () => undefined);
+    } else {
+      playTone();
+    }
+  } catch {
+    return;
+  }
+}
+
 export default function Home() {
-  const { user, session, isAdmin, fetchAuth, logout } = useAuth();
+  const { user, session, isAdmin, fetchAuth, logout, setAuth } = useAuth();
   const [, navigate] = useLocation();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -84,7 +119,18 @@ export default function Home() {
   const liveResult   = rawLines.length > 0 ? processInput(rawLines.join("\n")) : null;
   const runningTotal = liveResult?.total ?? 0;
 
+  const requirePasswordChange = Boolean(user?.mustChangePassword);
+
+  useEffect(() => {
+    if (requirePasswordChange) {
+      setShowPasswordModal(true);
+      setPasswordError("");
+      setPasswordSuccess("");
+    }
+  }, [requirePasswordChange]);
+
   function closePasswordModal() {
+    if (requirePasswordChange) return;
     setShowPasswordModal(false);
     setCurrentPassword("");
     setNewPassword("");
@@ -128,10 +174,16 @@ export default function Home() {
         return;
       }
       setPasswordSuccess(data.message ?? "Senha alterada com sucesso.");
+      if (user && session) {
+        setAuth({ ...user, mustChangePassword: false }, session);
+      }
+      setShowPasswordModal(false);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
-      setTimeout(closePasswordModal, 900);
+      setTimeout(() => {
+        setPasswordSuccess("");
+      }, 900);
     } catch {
       setPasswordError("Erro de conexão com o servidor.");
     } finally {
@@ -152,6 +204,7 @@ export default function Home() {
   }
 
   function handleScan(raw: string) {
+    if (requirePasswordChange) return;
     const trimmed = raw.trim();
     if (!trimmed) return;
 
@@ -161,6 +214,7 @@ export default function Home() {
     const isError   = lastLog.includes("Erro:");
 
     if (isError) {
+      playErrorAlert();
       const errMsg = lastLog.split(": ").slice(2).join(": ") || lastLog;
       showToast("Linha ignorada", errMsg, "error");
     }
@@ -185,7 +239,14 @@ export default function Home() {
     pingSession();
   }
 
+  function handleRemoveScan(itemId: string) {
+    const remaining = removeScanEntry(items, rawLines, itemId);
+    setItems(remaining.items);
+    setRawLines(remaining.rawLines);
+  }
+
   async function handleFinalizar() {
+    if (requirePasswordChange) return;
     if (rawLines.length === 0 || hasResult) return;
     setIsProcessing(true);
 
@@ -205,6 +266,7 @@ export default function Home() {
   }
 
   async function handleSalvarNoBanco() {
+    if (requirePasswordChange) return;
     if (!result || !session || savedOk) return;
     const errorLogs = result.logs.filter(l => l.includes("Erro:"));
     setIsSalvando(true);
@@ -241,6 +303,7 @@ export default function Home() {
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (requirePasswordChange) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -266,6 +329,7 @@ export default function Home() {
   }
 
   async function handleComparar() {
+    if (requirePasswordChange) return;
     setIsComparing(true);
     try {
       const url = session
@@ -283,6 +347,7 @@ export default function Home() {
   }
 
   async function handleExportar() {
+    if (requirePasswordChange) return;
     const qs = session ? `?sessionId=${session.id}` : "";
     previewExportUrl.current = `${API}/exportar${qs}`;
     setIsLoadingPreview(true);
@@ -306,6 +371,7 @@ export default function Home() {
   }
 
   function handleConfirmarExportacao() {
+    if (requirePasswordChange) return;
     setShowPreview(false);
     fetchAuth(previewExportUrl.current)
       .then(r => r.blob())
@@ -403,6 +469,7 @@ export default function Home() {
               )}
               <button
                 className="app-btn app-btn-outline app-btn-sm"
+                disabled={requirePasswordChange}
                 onClick={() => {
                   setPasswordError("");
                   setPasswordSuccess("");
@@ -433,7 +500,7 @@ export default function Home() {
 
       {showPasswordModal && (
         <div className="modal-overlay" role="presentation" onMouseDown={e => {
-          if (e.target === e.currentTarget && !isChangingPassword) closePasswordModal();
+          if (e.target === e.currentTarget && !isChangingPassword && !requirePasswordChange) closePasswordModal();
         }}>
           <form className="modal-card password-modal-card" onSubmit={handleChangePassword}>
             <h2 className="modal-title">Alterar senha</h2>
@@ -473,7 +540,7 @@ export default function Home() {
             {passwordError && <div className="admin-error">{passwordError}</div>}
             {passwordSuccess && <div className="admin-success">{passwordSuccess}</div>}
             <div className="modal-actions">
-              <button className="app-btn app-btn-outline" type="button" onClick={closePasswordModal} disabled={isChangingPassword}>
+              <button className="app-btn app-btn-outline" type="button" onClick={closePasswordModal} disabled={isChangingPassword || requirePasswordChange}>
                 Cancelar
               </button>
               <button className="app-btn app-btn-primary" type="submit" disabled={isChangingPassword}>
@@ -518,7 +585,7 @@ export default function Home() {
                 autoComplete="off"
                 spellCheck={false}
                 autoFocus
-                disabled={hasResult}
+                disabled={hasResult || requirePasswordChange}
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -543,7 +610,7 @@ export default function Home() {
 
           {/* Actions Card */}
           <div className="app-card actions-card">
-            <button className="app-btn app-btn-primary" disabled={finalizarDisabled} onClick={handleFinalizar}>
+            <button className="app-btn app-btn-primary" disabled={finalizarDisabled || requirePasswordChange} onClick={handleFinalizar}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="3" width="20" height="14" rx="2"/>
@@ -554,7 +621,7 @@ export default function Home() {
             </button>
 
             {hasResult && !savedOk && (
-              <button className="app-btn app-btn-save" disabled={isSalvando} onClick={handleSalvarNoBanco}>
+              <button className="app-btn app-btn-save" disabled={isSalvando || requirePasswordChange} onClick={handleSalvarNoBanco}>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
@@ -565,7 +632,7 @@ export default function Home() {
               </button>
             )}
 
-            <button className="app-btn app-btn-outline" disabled={limparDisabled} onClick={handleLimpar}>
+            <button className="app-btn app-btn-outline" disabled={limparDisabled || requirePasswordChange} onClick={handleLimpar}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="1 4 1 10 7 10"/>
@@ -587,6 +654,7 @@ export default function Home() {
 
             <button
               className="app-btn app-btn-secondary"
+              disabled={requirePasswordChange}
               onClick={() => fileInputRef.current?.click()}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -600,7 +668,7 @@ export default function Home() {
 
             <button
               className="app-btn app-btn-secondary"
-              disabled={!excelLoaded || isComparing}
+              disabled={!excelLoaded || isComparing || requirePasswordChange}
               onClick={handleComparar}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -612,7 +680,7 @@ export default function Home() {
               {isComparing ? "Comparando..." : "Comparar Dados"}
             </button>
 
-            <button className="app-btn app-btn-secondary" disabled={isLoadingPreview} onClick={handleExportar}>
+            <button className="app-btn app-btn-secondary" disabled={isLoadingPreview || requirePasswordChange} onClick={handleExportar}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -774,6 +842,17 @@ export default function Home() {
                           <div className={`item-qty${item.isError ? " item-qty-error" : ""}`}>
                             {item.quantity !== null ? item.quantity.toLocaleString("pt-BR") : "—"}
                           </div>
+                          {!item.isError && (
+                            <button
+                              type="button"
+                              className="scan-item-remove"
+                              aria-label={`Excluir leitura ${item.code ?? item.raw}`}
+                              onClick={() => handleRemoveScan(item.id)}
+                            >
+                              <Trash2 aria-hidden="true" size={14} />
+                              Excluir
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,7 +16,10 @@ function ProtectedRoute({ component: Component, adminOnly = false }: {
   adminOnly?: boolean;
 }) {
   const { user, isAdmin } = useAuth();
+  const [location] = useLocation();
+
   if (!user) return <Redirect to="/login" />;
+  if (user.mustChangePassword) return location === "/" ? <Component /> : <Redirect to="/" />;
   if (adminOnly && !isAdmin) return <Redirect to="/" />;
   return <Component />;
 }

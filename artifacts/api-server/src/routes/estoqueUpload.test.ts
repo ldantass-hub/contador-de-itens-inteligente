@@ -163,7 +163,7 @@ describe("POST /api/estoque/upload", () => {
       user_id: USER.id,
       operator_user_id: USER.id,
       operator_username: USER.username,
-      organization: "PC",
+      organization: "TV/PC",
       start_time: "2026-10-04T00:00:00.000Z",
       end_time: null,
       last_update: "2026-10-04T00:00:00.000Z",
