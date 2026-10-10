@@ -1,22 +1,21 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Trash2 } from "lucide-react";
+import { Calculator as CalculatorIcon, Trash2, X } from "lucide-react";
 import { processInput, type ProcessResult } from "@/lib/barcodeProcessor";
 import { useAuth } from "@/lib/authContext";
 import { removeScanEntry } from "@/lib/scanEntryRemoval";
+import {
+  confirmCalculatorResult,
+  evaluateExpression,
+  findCalculatorTarget,
+  isValidCalculatedQuantity,
+  type CalculatorEntry,
+} from "@/lib/calculator";
 
 const API = "/api/estoque";
 const SESSIONS_API = "/api/sessions";
 
-interface ItemEntry {
-  id: string;
-  raw: string;
-  code: string | null;
-  quantity: number | null;
-  timestamp: Date;
-  isError: boolean;
-  log: string;
-}
+interface ItemEntry extends CalculatorEntry {}
 
 interface Toast {
   id: string;
@@ -97,6 +96,10 @@ export default function Home() {
   const [rawLines,     setRawLines]     = useState<string[]>([]);
   const [items,        setItems]        = useState<ItemEntry[]>([]);
   const [inputValue,   setInputValue]   = useState("");
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
+  const [calculatorExpression, setCalculatorExpression] = useState("");
+  const [calculatorMessage, setCalculatorMessage] = useState("");
+  const [calculatorError, setCalculatorError] = useState("");
   const [hasResult,    setHasResult]    = useState(false);
   const [result,       setResult]       = useState<ProcessResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -118,6 +121,10 @@ export default function Home() {
 
   const liveResult   = rawLines.length > 0 ? processInput(rawLines.join("\n")) : null;
   const runningTotal = liveResult?.total ?? 0;
+  const calculatorTarget = findCalculatorTarget(items, liveResult?.activeCode ?? null);
+  const calculatorValue = evaluateExpression(calculatorExpression);
+  const canApplyCalculatorValue = Boolean(calculatorTarget) &&
+    isValidCalculatedQuantity(calculatorValue, runningTotal);
 
   const requirePasswordChange = Boolean(user?.mustChangePassword);
 
@@ -245,6 +252,50 @@ export default function Home() {
     setRawLines(remaining.rawLines);
   }
 
+  function handleCalculatorInput(value: string) {
+    setCalculatorError("");
+    setCalculatorMessage("");
+    setCalculatorExpression(current => current + value);
+  }
+
+  function handleCalculatorDelete() {
+    setCalculatorError("");
+    setCalculatorMessage("");
+    setCalculatorExpression(current => current.slice(0, -1));
+  }
+
+  function handleCalculatorClear() {
+    setCalculatorExpression("");
+    setCalculatorError("");
+    setCalculatorMessage("");
+  }
+
+  function handleCalculatorApply() {
+    if (!calculatorTarget) {
+      setCalculatorError("Leia um código válido antes de aplicar.");
+      return;
+    }
+    if (!isValidCalculatedQuantity(calculatorValue, runningTotal)) {
+      setCalculatorError("O resultado deve ser um inteiro positivo dentro do limite permitido.");
+      return;
+    }
+
+    const confirmed = confirmCalculatorResult(items, rawLines, calculatorExpression, {
+      id: Date.now().toString() + "-calc-" + Math.random().toString(36).slice(2),
+      timestamp: new Date(),
+    });
+    if (!confirmed) {
+      setCalculatorError("Não foi possível aplicar o resultado a este código nesta operação.");
+      return;
+    }
+
+    setItems(confirmed.items);
+    setRawLines(confirmed.rawLines);
+    setCalculatorExpression(confirmed.expression);
+    setCalculatorError("");
+    setCalculatorMessage(`${confirmed.appliedQuantity.toLocaleString("pt-BR")} adicionados a ${calculatorTarget.code}.`);
+  }
+
   async function handleFinalizar() {
     if (requirePasswordChange) return;
     if (rawLines.length === 0 || hasResult) return;
@@ -262,6 +313,7 @@ export default function Home() {
 
     setResult(finalResult);
     setHasResult(true);
+    setCalculatorOpen(false);
     setIsProcessing(false);
   }
 
@@ -295,6 +347,10 @@ export default function Home() {
     setRawLines([]);
     setItems([]);
     setInputValue("");
+    setCalculatorOpen(false);
+    setCalculatorExpression("");
+    setCalculatorMessage("");
+    setCalculatorError("");
     setHasResult(false);
     setResult(null);
     setSavedOk(false);
@@ -863,6 +919,71 @@ export default function Home() {
           )}
         </div>
       </div>
+
+      <button
+        type="button"
+        className="calculator-fab"
+        aria-label={calculatorOpen ? "Fechar calculadora" : "Abrir calculadora"}
+        aria-expanded={calculatorOpen}
+        disabled={hasResult || requirePasswordChange}
+        onClick={() => setCalculatorOpen(open => !open)}
+      >
+        {calculatorOpen ? <X aria-hidden="true" /> : <CalculatorIcon aria-hidden="true" />}
+        <span>Calculadora</span>
+      </button>
+
+      {calculatorOpen && !hasResult && (
+        <section
+          className="calculator-panel"
+          aria-label="Calculadora de quantidade"
+          onClick={event => event.stopPropagation()}
+        >
+          <header className="calculator-header">
+            <h2>Calculadora</h2>
+            <button type="button" className="calculator-close" aria-label="Fechar calculadora" onClick={() => setCalculatorOpen(false)}>
+              <X aria-hidden="true" size={18} />
+            </button>
+          </header>
+
+          <div className="calculator-destination">
+            <span>Código de destino</span>
+            <strong>{calculatorTarget?.code ?? "Nenhum código válido na operação"}</strong>
+            <small>Quantidade atual: {runningTotal.toLocaleString("pt-BR")}</small>
+          </div>
+
+          <div className="calculator-display" aria-live="polite">
+            <span>{calculatorExpression || "0"}</span>
+            <strong>{calculatorValue === null ? "—" : calculatorValue.toLocaleString("pt-BR")}</strong>
+          </div>
+
+          <div className="calculator-keypad">
+            <button type="button" className="calculator-key calculator-key-muted" onClick={handleCalculatorClear}>C</button>
+            <button type="button" className="calculator-key calculator-key-muted" onClick={handleCalculatorDelete}>DEL</button>
+            <button type="button" className="calculator-key calculator-key-operator" onClick={() => handleCalculatorInput("/")}>÷</button>
+            <button type="button" className="calculator-key calculator-key-operator" onClick={() => handleCalculatorInput("*")}>×</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("7")}>7</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("8")}>8</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("9")}>9</button>
+            <button type="button" className="calculator-key calculator-key-operator" onClick={() => handleCalculatorInput("-")}>−</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("4")}>4</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("5")}>5</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("6")}>6</button>
+            <button type="button" className="calculator-key calculator-key-operator" onClick={() => handleCalculatorInput("+")}>+</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("1")}>1</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("2")}>2</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput("3")}>3</button>
+            <button type="button" className="calculator-key calculator-key-equals" disabled={!canApplyCalculatorValue} onClick={handleCalculatorApply}>=</button>
+            <button type="button" className="calculator-key calculator-key-zero" onClick={() => handleCalculatorInput("0")}>0</button>
+            <button type="button" className="calculator-key" onClick={() => handleCalculatorInput(".")}>.</button>
+          </div>
+
+          {calculatorError && <p className="calculator-feedback calculator-feedback-error" role="alert">{calculatorError}</p>}
+          {calculatorMessage && <p className="calculator-feedback" role="status">{calculatorMessage}</p>}
+          {!calculatorTarget && !calculatorError && (
+            <p className="calculator-feedback">Leia um código válido para habilitar a aplicação do resultado.</p>
+          )}
+        </section>
+      )}
 
       {/* ── Export Preview Modal ───────────────────────────────── */}
       {showPreview && (
