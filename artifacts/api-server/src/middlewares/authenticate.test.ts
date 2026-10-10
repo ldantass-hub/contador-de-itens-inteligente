@@ -104,7 +104,6 @@ describe("authenticate", () => {
       authVersion: 1,
     }));
     req.originalUrl = "/api/auth/me";
-    req.path = "/me";
     const res = createResponse();
     const next = createNext();
 
@@ -127,6 +126,7 @@ describe("authenticate", () => {
       username: "operator",
       role: "user",
       authVersion: 2,
+      mustChangePassword: false,
     });
     const req = createRequest(signToken({
       userId: 17,
@@ -170,6 +170,7 @@ describe("authenticate", () => {
       username: "operator",
       role: "admin",
       authVersion: 1,
+      mustChangePassword: false,
     });
     const req = createRequest(signToken({
       userId: 17,
@@ -196,6 +197,7 @@ describe("authenticate", () => {
       username: "operator",
       role: "user",
       authVersion: 1,
+      mustChangePassword: false,
     });
     const req = createRequest(signToken({
       userId: 17,

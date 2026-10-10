@@ -117,6 +117,24 @@ function uploadedFile(buffer = normalXlsx, name = "inventory.xlsx", type = "appl
   return { field: "planilha", buffer, name, type };
 }
 
+async function createWorkbook(
+  sheets: Array<{ name: string; rows: Array<Array<string | number | null>> }>,
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  for (const { name, rows } of sheets) {
+    const worksheet = workbook.addWorksheet(name);
+    for (const row of rows) worksheet.addRow(row);
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
+async function getJson(path: string): Promise<{ response: Response; data: unknown }> {
+  const response = await fetch(`${baseUrl}/api/estoque${path}`, {
+    headers: { Cookie: `access_token=${token}` },
+  });
+  return { response, data: await response.json() as unknown };
+}
+
 describe("POST /api/estoque/upload", () => {
   beforeAll(async () => {
     vi.stubEnv("JWT_SECRET", SECRET);
@@ -258,4 +276,207 @@ describe("POST /api/estoque/upload", () => {
     expect(loadSpy).not.toHaveBeenCalled();
     loadSpy.mockRestore();
   });
+
+  it("imports values from only the first worksheet using the current positional conversion rules", async () => {
+    const workbook = await createWorkbook([
+      {
+        name: "Primeira",
+        rows: [
+          ["ITEM", "QUANTIDADE"],
+          ["  aBc  ", 5],
+          ["ABC", "8"],
+          ["", 100],
+          ["NaN", "not-a-number"],
+          ["Positive Infinity", "Infinity"],
+          ["Negative Infinity", "-Infinity"],
+          ["Null quantity", null],
+          ["Blank quantity", ""],
+          ["Zero", 0],
+          ["Negative", -2],
+          ["Fraction", "1.5"],
+          ["Total Geral", 17],
+        ],
+      },
+      {
+        name: "Segunda",
+        rows: [
+          ["ITEM", "QUANTIDADE"],
+          ["SECOND WORKSHEET", 999],
+        ],
+      },
+    ]);
+    const response = await postUpload(createForm([uploadedFile(workbook)]));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, rows: 7 });
+
+    const preview = await getJson("/preview-exportar");
+    expect(preview.response.status).toBe(200);
+    expect(preview.data).toEqual({
+      hasComparison: true,
+      organization: "TV/PC",
+      rows: [
+        { code: "ABC", quantity: 0, esperado: 8, diferenca: -8, sinal: "-" },
+        { code: "BLANK QUANTITY", quantity: 0, esperado: 0, diferenca: 0, sinal: "=" },
+        { code: "FRACTION", quantity: 0, esperado: 1.5, diferenca: -1.5, sinal: "-" },
+        { code: "NEGATIVE", quantity: 0, esperado: -2, diferenca: 2, sinal: "+" },
+        { code: "NULL QUANTITY", quantity: 0, esperado: 0, diferenca: 0, sinal: "=" },
+        { code: "TOTAL GERAL", quantity: 0, esperado: 17, diferenca: -17, sinal: "-" },
+        { code: "ZERO", quantity: 0, esperado: 0, diferenca: 0, sinal: "=" },
+      ],
+    });
+  });
+
+  it("returns comparison rows for the union of normalized Excel and session codes", async () => {
+    const workbook = await createWorkbook([{
+      name: "Referência",
+      rows: [
+        ["ITEM", "QUANTIDADE"],
+        [" both ", 5],
+        [" item-z ", 10],
+        ["only excel", 9],
+        ["same", 0],
+        ["zero-count", 3],
+        ["minus", 8],
+      ],
+    }]);
+    const upload = await postUpload(createForm([uploadedFile(workbook)]));
+    expect(upload.status).toBe(200);
+    state.getSessionCounts.mockResolvedValue([
+      { code: "BOTH", quantity: 7 },
+      { code: "count only", quantity: 4 },
+      { code: "ITEM-Z", quantity: 10 },
+      { code: "same", quantity: 0 },
+      { code: "zero-count", quantity: 0 },
+      { code: "minus", quantity: 1 },
+    ]);
+
+    const comparison = await getJson("/comparar");
+
+    expect(comparison.response.status).toBe(200);
+    expect(comparison.data).toEqual([
+      { item: "BOTH", contado: 7, esperado: 5, diferenca: 2, sinal: "+" },
+      { item: "COUNT ONLY", contado: 4, esperado: 0, diferenca: 4, sinal: "+" },
+      { item: "ITEM-Z", contado: 10, esperado: 10, diferenca: 0, sinal: "=" },
+      { item: "MINUS", contado: 1, esperado: 8, diferenca: -7, sinal: "-" },
+      { item: "ONLY EXCEL", contado: 0, esperado: 9, diferenca: -9, sinal: "-" },
+      { item: "SAME", contado: 0, esperado: 0, diferenca: 0, sinal: "=" },
+      { item: "ZERO-COUNT", contado: 0, esperado: 3, diferenca: -3, sinal: "-" },
+    ]);
+    expect(state.getSessionCounts).toHaveBeenCalledWith(91);
+  });
+
+  it("returns a 400 response when comparing without a nonempty imported workbook", async () => {
+    const workbook = await createWorkbook([{
+      name: "Referência",
+      rows: [["ITEM", "QUANTIDADE"]],
+    }]);
+    const upload = await postUpload(createForm([uploadedFile(workbook)]));
+    expect(upload.status).toBe(200);
+    expect(await upload.json()).toEqual({ ok: true, rows: 0 });
+
+    const comparison = await getJson("/comparar");
+
+    expect(comparison.response.status).toBe(400);
+    expect(comparison.data).toEqual({ error: "Nenhuma planilha importada." });
+    expect(state.getSessionCounts).not.toHaveBeenCalled();
+  });
+
+  it("includes counted, expected, difference, and sign fields in the comparison preview", async () => {
+    const workbook = await createWorkbook([{
+      name: "Referência",
+      rows: [["ITEM", "QUANTIDADE"], ["match", 4], ["excel only", 7]],
+    }]);
+    const upload = await postUpload(createForm([uploadedFile(workbook)]));
+    expect(upload.status).toBe(200);
+    state.getSessionCounts.mockResolvedValue([
+      { code: "MATCH", quantity: 6 },
+      { code: "count only", quantity: 3 },
+    ]);
+
+    const preview = await getJson("/preview-exportar");
+
+    expect(preview.response.status).toBe(200);
+    expect(preview.data).toEqual({
+      hasComparison: true,
+      organization: "TV/PC",
+      rows: [
+        { code: "COUNT ONLY", quantity: 3, esperado: 0, diferenca: 3, sinal: "+" },
+        { code: "EXCEL ONLY", quantity: 0, esperado: 7, diferenca: -7, sinal: "-" },
+        { code: "MATCH", quantity: 6, esperado: 4, diferenca: 2, sinal: "+" },
+      ],
+    });
+  });
+
+  it("previews counts without comparison columns when no workbook has been imported", async () => {
+    const workbook = await createWorkbook([{
+      name: "Referência",
+      rows: [["ITEM", "QUANTIDADE"]],
+    }]);
+    const upload = await postUpload(createForm([uploadedFile(workbook)]));
+    expect(upload.status).toBe(200);
+    state.getSessionCounts.mockResolvedValue([{ code: "COUNT ONLY", quantity: 3 }]);
+
+    const preview = await getJson("/preview-exportar");
+
+    expect(preview.response.status).toBe(200);
+    expect(preview.data).toEqual({
+      hasComparison: false,
+      organization: "TV/PC",
+      rows: [
+        { code: "COUNT ONLY", quantity: 3, esperado: null, diferenca: null, sinal: null },
+      ],
+    });
+  });
+
+  it("exports a valid workbook with the implemented worksheet and column structure", async () => {
+    state.getSessionCounts.mockResolvedValue([
+      { code: "ABCDEFGHIJK", quantity: 6 },
+      { code: "KLMNOPQRSTU", quantity: 2 },
+    ]);
+
+    const response = await fetch(`${baseUrl}/api/estoque/exportar`, {
+      headers: { Cookie: `access_token=${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(response.headers.get("content-disposition")).toContain("resultado_sessao.xlsx");
+
+    const workbook = new ExcelJS.Workbook();
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+    expect(workbook.worksheets.map(worksheet => worksheet.name)).toEqual(["Resultado"]);
+    const worksheet = workbook.worksheets[0];
+    expect(worksheet.getRow(1).values).toEqual([
+      undefined,
+      "ORGANIZAÇÃO",
+      "ITEM",
+      "QUANTIDADE TOTAL",
+    ]);
+    expect(worksheet.getRow(2).values).toEqual([
+      undefined,
+      "TV/PC",
+      "ABCDEFGHIJK",
+      6,
+    ]);
+    expect(worksheet.getRow(3).values).toEqual([
+      undefined,
+      "TV/PC",
+      "KLMNOPQRSTU",
+      2,
+    ]);
+  });
+
+  it.each(["/comparar", "/preview-exportar", "/exportar"])(
+    "returns the existing invalid-session response from %s",
+    async (path) => {
+      const result = await getJson(`${path}?sessionId=invalid`);
+
+      expect(result.response.status).toBe(400);
+      expect(result.data).toEqual({ error: "sessionId inválido." });
+    },
+  );
 });

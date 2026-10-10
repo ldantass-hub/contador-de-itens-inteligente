@@ -1,14 +1,16 @@
 import express from "express";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-const { getAllSessions } = vi.hoisted(() => ({
+const { getAllSessions, getSessionById, getSessionCounts } = vi.hoisted(() => ({
   getAllSessions: vi.fn(),
+  getSessionById: vi.fn(),
+  getSessionCounts: vi.fn(),
 }));
 
 vi.mock("../lib/db.js", () => ({
   getAllSessions,
-  getSessionById: vi.fn(),
-  getSessionCounts: vi.fn(),
+  getSessionById,
+  getSessionCounts,
   getAllUsers: vi.fn(),
   getSessionOperators: vi.fn(),
   createUser: vi.fn(),
@@ -60,5 +62,19 @@ describe("GET /api/admin/sessions historical organization filter", () => {
     expect(response.status).toBe(200);
     expect(body[0].organization).toBe("TV");
     expect(getAllSessions).toHaveBeenCalledWith(expect.objectContaining({ organization: "TV" }));
+  });
+
+  it("retrieves count rows associated with the requested session", async () => {
+    getSessionById.mockResolvedValue({ id: 12, organization: "TV" });
+    getSessionCounts.mockResolvedValue([{ code: "ABCDEFGHIJK", quantity: 25 }]);
+
+    const response = await fetch(`${baseUrl}/api/admin/sessions/12`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      session: { id: 12, organization: "TV" },
+      counts: [{ code: "ABCDEFGHIJK", quantity: 25 }],
+    });
+    expect(getSessionCounts).toHaveBeenCalledWith(12);
   });
 });
