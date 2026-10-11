@@ -128,6 +128,7 @@ function extractCodeOnly(line: string): string | null {
 
 /**
  * Format: Concatenated barcode — CODE(11) + NOISE + QUANTITY(trailing digits).
+ * For 18-character reads, an existing active code is the quantity destination.
  *
  * Algorithm (no guessing):
  *   1. Input must be all-alphanumeric and longer than CODE_LENGTH.
@@ -147,17 +148,27 @@ function extractCodeWithNoise(
 
   const rest = line.slice(CODE_LENGTH);
 
-  let startOfQty = rest.length;
-  while (startOfQty > 0 && /[0-9]/.test(rest[startOfQty - 1])) {
-    startOfQty--;
+  let qtyStr: string;
+  if (line.length === 18) {
+    qtyStr = line.slice(-5);
+    if (!/^[0-9]{5}$/.test(qtyStr)) return null;
+  } else {
+    let startOfQty = rest.length;
+    while (startOfQty > 0 && /[0-9]/.test(rest[startOfQty - 1])) {
+      startOfQty--;
+    }
+
+    if (startOfQty === rest.length) return null;
+    qtyStr = rest.slice(startOfQty);
   }
 
-  if (startOfQty === rest.length) return null;
-  const qtyStr = rest.slice(startOfQty);
   const qty    = parsePositiveInteger(qtyStr);
   if (qty === null) return null;
 
-  if (activeCode !== null && codePart !== activeCode) return null;
+  if (activeCode !== null && codePart !== activeCode) {
+    if (line.length !== 18) return null;
+    return { code: activeCode, quantity: qty };
+  }
 
   return { code: codePart, quantity: qty };
 }

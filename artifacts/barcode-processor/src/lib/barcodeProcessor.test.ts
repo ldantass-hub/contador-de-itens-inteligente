@@ -78,6 +78,114 @@ describe("processInput", () => {
     });
   });
 
+  describe("códigos concatenados com 18 caracteres", () => {
+    it("usa os últimos cinco caracteres como quantidade no formato de 18 caracteres", () => {
+      expect(processInput("blctp7x00340004000")).toMatchObject({
+        activeCode: "blctp7x0034",
+        total: 4000,
+      });
+    });
+
+    it("converte zeros à esquerda no sufixo de cinco dígitos", () => {
+      expect(processInput("ABCDEFGHIJKxx04000")).toMatchObject({
+        activeCode: "ABCDEFGHIJK",
+        total: 4000,
+      });
+    });
+
+    it("aceita a quantidade 00001 como o número 1", () => {
+      expect(processInput("ABCDEFGHIJKxx00001")).toMatchObject({
+        activeCode: "ABCDEFGHIJK",
+        total: 1,
+      });
+    });
+
+    it("adiciona a quantidade ao código ativo quando o código concatenado é diferente", () => {
+      const result = processInput("0CK106CK56A\nblctp7x00340004000");
+
+      expect(result).toMatchObject({ activeCode: "0CK106CK56A", total: 4000 });
+      expect(result.logs[1]).toContain(
+        '[CODIGO+RUIDO] Codigo="0CK106CK56A" Quantidade=4000',
+      );
+    });
+
+    it("acumula a leitura de 18 caracteres ao total já contado do código ativo", () => {
+      expect(processInput("0CK106CK56A;5\nblctp7x00340004000")).toMatchObject({
+        activeCode: "0CK106CK56A",
+        total: 4005,
+      });
+    });
+
+    it("associa ao código ativo a quantidade mesmo com outro prefixo válido", () => {
+      expect(processInput("0CK106CK56A;5\nKLMNOPQRSTUxx00007")).toMatchObject({
+        activeCode: "0CK106CK56A",
+        total: 12,
+      });
+    });
+
+    it("interpreta zeros à esquerda na quantidade de 18 caracteres para o código ativo", () => {
+      expect(processInput("0CK106CK56A\nblctp7x00340000001")).toMatchObject({
+        activeCode: "0CK106CK56A",
+        total: 1,
+      });
+    });
+
+    it("rejeita quantidade zero no sufixo de cinco dígitos", () => {
+      const result = processInput("0CK106CK56A;5\nblctp7x00340000000");
+
+      expect(result).toMatchObject({ activeCode: "0CK106CK56A", total: 5 });
+      expect(result.logs[1]).toContain("Erro: entrada invalida");
+    });
+
+    it("rejeita o formato de 18 caracteres quando o sufixo de cinco caracteres não é numérico", () => {
+      const result = processInput("ABCDEFGHIJKxx12a45");
+
+      expect(result).toMatchObject({ activeCode: null, total: 0 });
+      expect(result.logs[0]).toContain("Erro: entrada invalida");
+    });
+
+    it("mantém o código e o total ativos quando o sufixo de 18 caracteres é inválido", () => {
+      const result = processInput("0CK106CK56A;5\nABCDEFGHIJKxx12a45");
+
+      expect(result).toMatchObject({ activeCode: "0CK106CK56A", total: 5 });
+      expect(result.logs[1]).toContain("Erro: entrada invalida");
+    });
+
+    it("preserva a extração legada para uma entrada de 17 caracteres", () => {
+      expect(processInput("ABCDEFGHIJKxx0007")).toMatchObject({
+        activeCode: "ABCDEFGHIJK",
+        total: 7,
+      });
+    });
+
+    it("preserva a extração legada para uma entrada de 19 caracteres", () => {
+      expect(processInput("ABCDEFGHIJKxxx00007")).toMatchObject({
+        activeCode: "ABCDEFGHIJK",
+        total: 7,
+      });
+    });
+
+    it("soma a quantidade extraída à leitura já registrada para o mesmo código", () => {
+      const result = processInput("blctp7x0034;3\nblctp7x00340004000");
+
+      expect(result).toMatchObject({ activeCode: "blctp7x0034", total: 4003 });
+      expect(result.logs[1]).toContain('[CODIGO+RUIDO] Codigo="blctp7x0034" Quantidade=4000');
+    });
+
+    it("não substitui o código ativo quando uma leitura de 18 caracteres soma sua quantidade", () => {
+      const result = processInput("0CK106CK56A;5\nblctp7x00340004000");
+
+      expect(result.activeCode).toBe("0CK106CK56A");
+      expect(result.logs[1]).not.toContain('Codigo="blctp7x0034"');
+    });
+
+    it("produz o mesmo resultado ao reprocessar repetidamente as mesmas entradas", () => {
+      const input = "0CK106CK56A;5\nblctp7x00340004000";
+
+      expect(processInput(input)).toEqual(processInput(input));
+    });
+  });
+
   describe("regras de estado e bordas", () => {
     it("soma várias quantidades para o código ativo", () => {
       expect(processInput(`${CODE};2\n3\n${CODE}.noise.4`)).toMatchObject({
